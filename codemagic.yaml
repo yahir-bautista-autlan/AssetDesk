@@ -1,0 +1,16 @@
+workflows:
+  ios-workflow:
+    name: Compilar iOS de AssetDesk
+    max_build_duration: 30
+    environment:
+      flutter: stable
+      xcode: latest
+    scripts:
+      - name: Instalar dependencias
+        script: |
+          flutter pub get
+      - name: Construir IPA para pruebas
+        script: |
+          flutter build ipa --release --no-codesign
+    artifacts:
+      - build/ios/ipa/*.ipa
