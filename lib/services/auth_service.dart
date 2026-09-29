@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../models/inventory_model.dart';
 import '../models/user_model.dart';
 
@@ -10,19 +10,29 @@ class AuthService {
       'https://script.google.com/macros/s/AKfycbxdDGzCjqaXJuwaH76yiVPGjmeo5alpU1hG5PtAuCxw-yRGQmu8GYkP-e-rSWf5P0tY/exec';
 
   static String ultimoError = '';
+  static String? _accessToken;
 
-  static String hashPassword(String password) {
-    final bytes = utf8.encode(password.trim());
-    final digest = sha256.convert(bytes);
-    return digest.toString().toLowerCase();
-  }
+  // Instancia configurada para forzar cuentas del dominio corporativo si se desea
+  static final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email'],
+    // hostedDomain: 'autlan.com.mx', // Descomenta esta línea para restringir solo a correos de la empresa
+  );
 
   static Future<Map<String, dynamic>?> _post(Map<String, dynamic> body) async {
     ultimoError = '';
     try {
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+      };
+      
+      // Adjuntar credencial corporativa si existe
+      if (_accessToken != null) {
+        headers['Authorization'] = 'Bearer $_accessToken';
+      }
+
       final response = await http.post(
         Uri.parse(scriptUrl),
-        headers: {'Content-Type': 'text/plain;charset=utf-8'},
+        headers: headers,
         body: jsonEncode(body),
       );
 
@@ -34,8 +44,7 @@ class AuthService {
           }
           return data;
         } catch (_) {
-          ultimoError =
-              'El servidor no devolvió JSON válido. Revisa los permisos de la Web App.';
+          ultimoError = 'El servidor rechazó la conexión. Revisa los permisos de la Web App.';
           return null;
         }
       }
@@ -48,26 +57,44 @@ class AuthService {
     }
   }
 
-  static Future<UserModel?> login(String correo, String password) async {
-    final data = await _post({
-      'action': 'login',
-      'correo': correo.trim().toLowerCase(),
-      'passwordHash': hashPassword(password),
-    });
+  static Future<UserModel?> loginConGoogle() async {
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        ultimoError = 'Inicio de sesión cancelado';
+        return null; 
+      }
 
-    if (data != null && data['status'] == 'success' && data['usuario'] != null) {
-      final user = UserModel.fromJson(data['usuario']);
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user_data', jsonEncode(data['usuario']));
-      } catch (_) {}
-      return user;
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      _accessToken = googleAuth.accessToken; // Guardamos el token corporativo temporal
+
+      final data = await _post({
+        'action': 'login',
+        'correo': googleUser.email.trim().toLowerCase(),
+      });
+
+      if (data != null && data['status'] == 'success' && data['usuario'] != null) {
+        final user = UserModel.fromJson(data['usuario']);
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_data', jsonEncode(data['usuario']));
+        } catch (_) {}
+        return user;
+      }
+      
+      // Si falló, desconectamos la cuenta para que pueda intentar con otra
+      await _googleSignIn.signOut();
+      return null;
+    } catch (e) {
+      ultimoError = 'Error al conectar con Google: $e';
+      return null;
     }
-    return null;
   }
 
   static Future<void> logout() async {
     try {
+      await _googleSignIn.signOut();
+      _accessToken = null;
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
     } catch (_) {}
@@ -78,6 +105,8 @@ class AuthService {
       final prefs = await SharedPreferences.getInstance();
       final userString = prefs.getString('user_data');
       if (userString != null && userString.isNotEmpty) {
+        // En un escenario real, si se requiere seguridad estricta,
+        // se debería validar que el token de Google siga vivo.
         return UserModel.fromJson(jsonDecode(userString));
       }
     } catch (_) {}
@@ -87,7 +116,6 @@ class AuthService {
   static Future<bool> registrarUsuario({
     required String nombre,
     required String correo,
-    required String password,
     required String puesto,
     required List<String> inventarios,
   }) async {
@@ -95,7 +123,6 @@ class AuthService {
       'action': 'registrar',
       'nombre': nombre.trim(),
       'correo': correo.trim().toLowerCase(),
-      'passwordHash': hashPassword(password),
       'puesto': puesto.trim(),
       'inventarios': inventarios.join(','),
     });
@@ -116,27 +143,6 @@ class AuthService {
       'inventarios': inventarios.join(','),
     });
     return data != null && data['status'] == 'success';
-  }
-
-  static Future<Map<String, dynamic>> cambiarMiPassword({
-    required String correo,
-    required String actualPassword,
-    required String nuevaPassword,
-  }) async {
-    final data = await _post({
-      'action': 'cambiarMiPassword',
-      'correo': correo.trim().toLowerCase(),
-      'actualPasswordHash': hashPassword(actualPassword),
-      'nuevaPasswordHash': hashPassword(nuevaPassword),
-    });
-
-    if (data == null) {
-      return {'exito': false, 'mensaje': 'Error de conexión con el servidor'};
-    }
-    return {
-      'exito': data['status'] == 'success',
-      'mensaje': data['message'] ?? 'Error desconocido',
-    };
   }
 
   static Future<bool> eliminarUsuario(String correo) async {
