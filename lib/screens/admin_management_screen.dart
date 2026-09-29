@@ -202,7 +202,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       exito = await AuthService.registrarUsuario(
         nombre: _nombreController.text.trim(),
         correo: _correoController.text.trim(),
-        password: _passwordController.text,
+       // password: _passwordController.text,
         puesto: _puestoSeleccionado ?? '',
         inventarios: List<String>.from(_seleccionados),
       );
