@@ -9,8 +9,11 @@ workflows:
       - name: Instalar dependencias
         script: |
           flutter pub get
-      - name: Construir IPA para pruebas
+      - name: Construir app para iOS sin firma
         script: |
-          flutter build ipa --release --no-codesign
+          flutter build ios --release --no-codesign
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r assetdesk.ipa Payload
     artifacts:
-      - build/ios/ipa/*.ipa
+      - assetdesk.ipa
