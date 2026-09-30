@@ -17,20 +17,34 @@ class AuthService {
     return digest.toString().toLowerCase();
   }
 
-  static Future<Map<String, dynamic>?> _post(Map<String, dynamic> body) async {
+    static Future<Map<String, dynamic>?> _post(Map<String, dynamic> body) async {
     ultimoError = '';
     try {
-      final response = await http.post(
+      var response = await http.post(
         Uri.parse(scriptUrl),
         headers: {'Content-Type': 'text/plain;charset=utf-8'},
         body: jsonEncode(body),
       );
 
-            final preview = response.body.length > 150
+      int redirectCount = 0;
+      while ((response.statusCode == 301 ||
+              response.statusCode == 302 ||
+              response.statusCode == 303 ||
+              response.statusCode == 307 ||
+              response.statusCode == 308) &&
+          redirectCount < 5) {
+        final location = response.headers['location'];
+        if (location == null || location.isEmpty) break;
+
+        response = await http.get(Uri.parse(location));
+        redirectCount++;
+      }
+
+      final preview = response.body.length > 150
           ? response.body.substring(0, 150)
           : response.body;
 
-      if (response.statusCode == 200 || response.statusCode == 302) {
+      if (response.statusCode == 200) {
         try {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
           if (data['status'] != 'success') {
@@ -44,7 +58,8 @@ class AuthService {
         }
       }
 
-      ultimoError = 'Status ${response.statusCode} | Bytes: ${response.bodyBytes.length} | Body: "$preview"';
+      ultimoError =
+          'Status ${response.statusCode} | Bytes: ${response.bodyBytes.length} | Body: "$preview"';
       return null;
     } catch (e) {
       ultimoError = 'Error de conexión: $e';
