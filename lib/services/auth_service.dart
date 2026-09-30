@@ -233,4 +233,21 @@ class AuthService {
     });
     return data != null && data['status'] == 'success';
   }
+
+
+    static Future<bool> agregarActivo({
+    required String spreadsheetId,
+    required String pestana,
+    required Map<String, String> datos,
+  }) async {
+    final data = await _post({
+      'action': 'agregarActivo',
+      'spreadsheetId': spreadsheetId,
+      'pestana': pestana,
+      'datos': datos,
+    });
+    return data != null && data['status'] == 'success';
+  }
+  
 }
+

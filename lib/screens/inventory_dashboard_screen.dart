@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
+import 'add_asset_screen.dart';
 
 class InventoryDashboardScreen extends StatefulWidget {
   final InventoryModel? inventario;
@@ -402,6 +403,35 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     );
   }
 
+    Future<void> _abrirFormularioAgregar(
+      String nombrePestana, List<String> headers, List<dynamic> rows) async {
+    if (headers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('No se encontraron columnas para esta pestaña.')),
+      );
+      return;
+    }
+
+    final creado = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddAssetScreen(
+          nombrePestana: nombrePestana,
+          headers: headers,
+          existingRows: rows
+              .map((r) => Map<String, dynamic>.from(r as Map))
+              .toList(),
+          inventario: _inventarioActivo,
+        ),
+      ),
+    );
+
+    if (creado == true) {
+      _cargarDatosRemotos();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -585,6 +615,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                   _datosHojas[dataKey] ?? {'headers': [], 'rows': []};
               final allHeaders =
                   List<String>.from(pestanaData['headers'] ?? []);
+              final mainData = _datosHojas[nombrePestana] ?? {'headers': [], 'rows': []};
+              final mainHeaders = List<String>.from(mainData['headers'] ?? []);
+              final mainRows = List<dynamic>.from(mainData['rows'] ?? []);
 
               return Row(
                 children: [
@@ -639,7 +672,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                     minSize: 0,
                     borderRadius: BorderRadius.circular(12),
                     pressedOpacity: 0.7,
-                    onPressed: () {},
+                    onPressed: () => _abrirFormularioAgregar(
+                        nombrePestana, mainHeaders, mainRows),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1007,6 +1041,7 @@ const _capturaConfig = _DetailConfig(
   badge: 'Responsiva',
   secciones: [
     _DetailSection('Datos generales', [
+      _DetailField('Nombre', 'Nombre'),
       _DetailField('Nombre Lógico del Equipo', 'Nombre Lógico'),
       _DetailField('Ubicación', 'Ubicación'),
       _DetailField('Usuario de Dominio', 'Usuario de Dominio'),
