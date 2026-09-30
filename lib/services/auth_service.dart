@@ -26,6 +26,10 @@ class AuthService {
         body: jsonEncode(body),
       );
 
+            final preview = response.body.length > 150
+          ? response.body.substring(0, 150)
+          : response.body;
+
       if (response.statusCode == 200 || response.statusCode == 302) {
         try {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -34,15 +38,13 @@ class AuthService {
           }
           return data;
         } catch (_) {
-          final preview = response.body.length > 150
-              ? response.body.substring(0, 150)
-              : response.body;
-          ultimoError = 'JSON inválido. Respuesta: $preview';
+          ultimoError =
+              'Status ${response.statusCode} | Bytes: ${response.bodyBytes.length} | Body: "$preview"';
           return null;
         }
       }
 
-      ultimoError = 'Respuesta HTTP ${response.statusCode}';
+      ultimoError = 'Status ${response.statusCode} | Bytes: ${response.bodyBytes.length} | Body: "$preview"';
       return null;
     } catch (e) {
       ultimoError = 'Error de conexión: $e';
