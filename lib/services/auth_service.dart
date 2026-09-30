@@ -7,7 +7,7 @@ import '../models/user_model.dart';
 
 class AuthService {
   static const String scriptUrl =
-      'https://script.google.com/macros/s/AKfycbxdDGzCjqaXJuwaH76iyVPGjmeo5alpU1hG5PtAuCxw-yRGQmu8GYkP-e-rSWf5P0tY/exec';
+      'https://script.google.com/macros/s/AKfycbxdDGzCjqaXJuwaH76yiVPGjmeo5alpU1hG5PtAuCxw-yRGQmu8GYkP-e-rSWf5P0tY/exec';
 
   static String ultimoError = '';
 
