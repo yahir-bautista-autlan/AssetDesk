@@ -34,8 +34,10 @@ class AuthService {
           }
           return data;
         } catch (_) {
-          ultimoError =
-              'El servidor no devolvió JSON válido. Revisa los permisos de la Web App.';
+          final preview = response.body.length > 150
+              ? response.body.substring(0, 150)
+              : response.body;
+          ultimoError = 'JSON inválido. Respuesta: $preview';
           return null;
         }
       }
