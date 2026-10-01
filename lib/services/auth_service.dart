@@ -235,7 +235,7 @@ class AuthService {
   }
 
 
-    static Future<bool> agregarActivo({
+  static Future<bool> agregarActivo({
     required String spreadsheetId,
     required String pestana,
     required Map<String, String> datos,
@@ -248,6 +248,6 @@ class AuthService {
     });
     return data != null && data['status'] == 'success';
   }
-  
+
 }
 
