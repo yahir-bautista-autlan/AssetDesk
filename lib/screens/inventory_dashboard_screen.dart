@@ -31,7 +31,6 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   static const lightPurpleBg = Color(0xFFEFE8F6);
 
   static const double _colWidth = 170;
-  // AGREGAMOS 'Consumibles' AL LISTADO DE TABS
   static const List<String> _tabs = ['Captura', 'Impresoras', 'Otros', 'Consumibles'];
   static const List<String> _filtros = ['Todos', 'Asignados', 'Disponibles', 'Bajas'];
 
@@ -179,8 +178,13 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
           }
         });
 
-        if (filtro == 'Asignados' && estatusValor != 'activo') return false;
-        if (filtro == 'Disponibles' && estatusValor != 'pendiente de asignar') return false;
+        if (nombrePestana == 'Consumibles') {
+          if (filtro == 'Asignados' && estatusValor != 'asignado') return false;
+          if (filtro == 'Disponibles' && estatusValor != 'stock') return false;
+        } else {
+          if (filtro == 'Asignados' && estatusValor != 'activo') return false;
+          if (filtro == 'Disponibles' && estatusValor != 'pendiente de asignar') return false;
+        }
       }
 
       if (query.isEmpty) return true;
@@ -198,12 +202,11 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
 
     if (scannedSN == null || scannedSN.isEmpty) return;
 
-    // ACTUALIZAMOS EL MAPA PARA AGREGAR CONSUMIBLES
     const mapaSnKey = {
       'Captura': 'Numero de Serie',
       'Impresoras': 'Num. de Serie',
       'Otros': 'NoSerie',
-      'Consumibles': 'NoSerie',
+      'Consumibles': 'Impresora',
     };
 
     String? pestanaEncontrada;
@@ -237,7 +240,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('No se encontró ningún activo con el SN: $scannedSN'),
+            content: Text('No se encontró ningún elemento con el código: $scannedSN'),
             backgroundColor: Colors.red.shade600,
             behavior: SnackBarBehavior.floating,
           ),
@@ -467,10 +470,10 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     if (esEstatus && v.isNotEmpty) {
       Color color;
       Color fondo;
-      if (v == 'activo' || v == 'active') {
+      if (v == 'activo' || v == 'active' || v == 'asignado') {
         color = const Color(0xFF15803D);
         fondo = const Color(0xFFDCFCE7);
-      } else if (v.contains('pendiente')) {
+      } else if (v == 'stock' || v.contains('pendiente')) {
         color = const Color(0xFF6B7280);
         fondo = const Color(0xFFF3F4F6);
       } else {
@@ -512,20 +515,6 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     );
   }
 
-  // AGREGAMOS CONFIGURACIÓN PARA CONSUMIBLES
-  _DetailConfig _configPorPestana(String nombrePestana) {
-    switch (nombrePestana) {
-      case 'Impresoras':
-        return _impresorasConfig;
-      case 'Otros':
-        return _otrosConfig;
-      case 'Consumibles':
-        return _consumiblesConfig;
-      default:
-        return _capturaConfig;
-    }
-  }
-
   void _abrirDetalle(Map<String, dynamic> fila, String nombrePestana) {
     final mainData = _datosHojas[nombrePestana] ?? {'headers': [], 'rows': []};
     final mainHeaders = List<String>.from(mainData['headers'] ?? []);
@@ -539,7 +528,6 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => _DeviceDetailSheet(
         fila: fila,
-        config: _configPorPestana(nombrePestana),
         nombrePestana: nombrePestana,
         spreadsheetId: _inventarioActivo?.spreadsheetId ?? '',
         headers: mainHeaders,
@@ -734,7 +722,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
               controller: _searchController,
               onChanged: _onSearchChanged,
               decoration: const InputDecoration(
-                hintText: 'Buscar por usuario, serie...',
+                hintText: 'Buscar por artículo, modelo, color...',
                 hintStyle: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
                 prefixIcon: Icon(Icons.search, color: Color(0xFF6B7280)),
                 border: InputBorder.none,
@@ -896,7 +884,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
               ),
             ),
             child: Text(
-              titulo,
+              titulo == 'Disponibles' && _tabs[_tabIndex.value] == 'Consumibles'
+                  ? 'Stock'
+                  : titulo,
               style: TextStyle(
                 color: activo ? primaryPurple : const Color(0xFF4B5563),
                 fontWeight: activo ? FontWeight.bold : FontWeight.w500,
@@ -1043,7 +1033,6 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     );
   }
 
-  // AGREGAMOS EL ÍCONO DE CONSUMIBLES
   Widget _buildBottomNav() {
     final icons = [
       (CupertinoIcons.desktopcomputer, 'Captura'),
@@ -1181,7 +1170,6 @@ class _DetailConfig {
   });
 }
 
-// ACTUALIZAMOS MAPA DE BAJAS
 const Map<String, String> _mapaNombreBajas = {
   'Captura': 'Bajas',
   'Impresoras': 'Bajas_Impresoras',
@@ -1201,7 +1189,8 @@ const _capturaConfig = _DetailConfig(
       _DetailField('Usuario de Dominio', 'Usuario de Dominio'),
       _DetailField('Responsable', 'Responsable'),
       _DetailField('Departamento', 'Departamento'),
-    ]),_DetailSection('Hardware y Red', [
+    ]),
+    _DetailSection('Hardware y Red', [
       _DetailField('Equipo', 'Equipo'),
       _DetailField('Modelo', 'Modelo'),
       _DetailField('Numero de Serie', 'Número de Serie'),
@@ -1289,25 +1278,21 @@ const _otrosConfig = _DetailConfig(
   ],
 );
 
-// CONFIGURACIÓN DE CONSUMIBLES NUEVA
+// CONFIGURACIÓN DE CONSUMIBLES: LISTADO PLANO Y SIN ACORDEONES, SIN QR/RESPONSIVA
 const _consumiblesConfig = _DetailConfig(
-  tituloKeys: ['Nombre', 'Articulo', 'Modelo'],
-  snKey: 'NoSerie',
+  tituloKeys: ['Impresora', 'Modelo'],
+  snKey: 'Impresora',
   badge: 'Consumible',
   secciones: [
-    _DetailSection('Datos generales', [
-      _DetailField('Nombre', 'Nombre'),
-      _DetailField('Articulo', 'Artículo'),
-      _DetailField('Tipo', 'Tipo'),
-      _DetailField('Color', 'Color'),
-    ]),
-    _DetailSection('Inventario y Lotes', [
+    _DetailSection('Información del Consumible', [
+      _DetailField('Impresora', 'Impresora'),
       _DetailField('Modelo', 'Modelo'),
-      _DetailField('NoSerie', 'Número de Serie / Lote'),
-      _DetailField('Cantidad', 'Cantidad'),
-    ]),
-    _DetailSection('Detalles adicionales', [
-      _DetailField('FechaRegistro', 'Fecha de Registro'),
+      _DetailField('Color', 'Color'),
+      _DetailField('Tipo', 'Tipo'),
+      _DetailField('Departamento', 'Departamento'),
+      _DetailField('Proveedor', 'Proveedor'),
+      _DetailField('Responsable', 'Responsable'),
+      _DetailField('Fecha', 'Fecha'),
       _DetailField('Comentarios', 'Comentarios'),
     ]),
   ],
@@ -1315,7 +1300,6 @@ const _consumiblesConfig = _DetailConfig(
 
 class _DeviceDetailSheet extends StatefulWidget {
   final Map<String, dynamic> fila;
-  final _DetailConfig config;
   final String nombrePestana;
   final String spreadsheetId;
   final List<String> headers;
@@ -1326,7 +1310,6 @@ class _DeviceDetailSheet extends StatefulWidget {
 
   const _DeviceDetailSheet({
     required this.fila,
-    required this.config,
     required this.nombrePestana,
     required this.spreadsheetId,
     required this.headers,
@@ -1343,12 +1326,17 @@ class _DeviceDetailSheet extends StatefulWidget {
 class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
   static const primaryPurple = Color(0xFF532E7C);
 
-  late Set<int> _expandidas;
-
-  @override
-  void initState() {
-    super.initState();
-    _expandidas = {0};
+  _DetailConfig get _config {
+    switch (widget.nombrePestana) {
+      case 'Impresoras':
+        return _impresorasConfig;
+      case 'Otros':
+        return _otrosConfig;
+      case 'Consumibles':
+        return _consumiblesConfig;
+      default:
+        return _capturaConfig;
+    }
   }
 
   String _valor(String key) {
@@ -1357,7 +1345,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
   }
 
   String _titulo() {
-    for (final k in widget.config.tituloKeys) {
+    for (final k in _config.tituloKeys) {
       final v = _valor(k);
       if (v.isNotEmpty) return v;
     }
@@ -1366,21 +1354,21 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
 
   bool _esActivo() {
     final v = _valor('Estatus').toLowerCase();
-    return v == 'activo' || v == 'active';
+    return v == 'activo' || v == 'active' || v == 'asignado';
   }
 
   List<_DetailSection> _seccionesConDatos() {
     final usadas = <String>{};
-    for (final s in widget.config.secciones) {
+    for (final s in _config.secciones) {
       for (final f in s.campos) {
         usadas.add(f.key);
       }
     }
-    usadas.add(widget.config.snKey);
-    usadas.addAll(widget.config.tituloKeys);
+    usadas.add(_config.snKey);
+    usadas.addAll(_config.tituloKeys);
     usadas.add('Estatus');
 
-    final resultado = widget.config.secciones
+    final resultado = _config.secciones
         .map((s) {
           final camposConDatos =
               s.campos.where((f) => _valor(f.key).isNotEmpty).toList();
@@ -1409,7 +1397,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
         titulo: _titulo(),
         nombreSeccionBajas: _mapaNombreBajas[widget.nombrePestana] ?? 'Bajas',
         onConfirmar: (motivo) {
-          final sn = _valor(widget.config.snKey);
+          final sn = _valor(_config.snKey);
           return AuthService.darDeBaja(
             spreadsheetId: widget.spreadsheetId,
             pestana: widget.nombrePestana,
@@ -1462,6 +1450,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
   Widget build(BuildContext context) {
     final secciones = _seccionesConDatos();
     final activo = _esActivo();
+    final esConsumible = widget.nombrePestana == 'Consumibles';
 
     return DraggableScrollableSheet(
       initialChildSize: 0.94,
@@ -1504,46 +1493,49 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             ),
                           ),
                         ),
-                        InkWell(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ResponsivaPreviewScreen(
-                                  fila: widget.fila,
-                                  nombrePestana: widget.nombrePestana,
-                                  inventario: widget.inventario,
-                                ),
-                              ),
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(14),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE3EBFF),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.description_outlined,
-                                    size: 14, color: Color(0xFF3457D5)),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Responsiva',
-                                  style: TextStyle(
-                                    color: Color(0xFF3457D5),
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
+                        // MOSTRAR RESPONSIVA SOLO SI NO ES CONSUMIBLE
+                        if (!esConsumible) ...[
+                          InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ResponsivaPreviewScreen(
+                                    fila: widget.fila,
+                                    nombrePestana: widget.nombrePestana,
+                                    inventario: widget.inventario,
                                   ),
                                 ),
-                              ],
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE3EBFF),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.description_outlined,
+                                      size: 14, color: Color(0xFF3457D5)),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Responsiva',
+                                    style: TextStyle(
+                                      color: Color(0xFF3457D5),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
+                          const SizedBox(width: 8),
+                        ],
                         GestureDetector(
                           onTap: () => Navigator.pop(context),
                           child: Container(
@@ -1588,7 +1580,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                               const SizedBox(width: 5),
                               Text(
                                 _valor('Estatus').isEmpty
-                                    ? 'Sin estatus'
+                                    ? (esConsumible ? 'Stock' : 'Sin estatus')
                                     : _valor('Estatus'),
                                 style: TextStyle(
                                   color: activo
@@ -1601,16 +1593,6 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             ],
                           ),
                         ),
-                        if (_valor(widget.config.snKey).isNotEmpty) ...[
-                          const SizedBox(width: 10),
-                          Text(
-                            'SN: ${_valor(widget.config.snKey)}',
-                            style: const TextStyle(
-                              color: Color(0xFF6B7280),
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -1632,7 +1614,37 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             itemCount: secciones.length,
                             itemBuilder: (context, index) {
                               final seccion = secciones[index];
-                              final expandida = _expandidas.contains(index);
+                              
+                              // SI ES CONSUMIBLE, NO USAMOS ACORDEONES, MOSTRAMOS CONTENIDO DIRECTO Y PLANO
+                              if (esConsumible) {
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFAFAFC),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                        color: const Color(0xFFEDEDF2)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        seccion.titulo,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: primaryPurple,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildCamposGrid(seccion.campos),
+                                    ],
+                                  ),
+                                );
+                              }
+
+                              // ACORDEÓN TRADICIONAL PARA LAS DEMÁS PESTAÑAS
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 10),
                                 decoration: BoxDecoration(
@@ -1641,62 +1653,23 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                                   border: Border.all(
                                       color: const Color(0xFFEDEDF2)),
                                 ),
-                                child: Column(
-                                  children: [
-                                    InkWell(
-                                      borderRadius: BorderRadius.circular(16),
-                                      onTap: () {
-                                        setState(() {
-                                          if (expandida) {
-                                            _expandidas.remove(index);
-                                          } else {
-                                            _expandidas.add(index);
-                                          }
-                                        });
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 16, vertical: 14),
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              seccion.titulo,
-                                              style: const TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.black87,
-                                              ),
-                                            ),
-                                            AnimatedRotation(
-                                              turns: expandida ? 0.5 : 0,
-                                              duration: const Duration(
-                                                  milliseconds: 200),
-                                              child: const Icon(
-                                                  Icons.keyboard_arrow_down,
-                                                  color: Color(0xFF6B7280)),
-                                            ),
-                                          ],
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        seccion.titulo,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.black87,
                                         ),
                                       ),
-                                    ),
-                                    AnimatedCrossFade(
-                                      duration:
-                                          const Duration(milliseconds: 200),
-                                      crossFadeState: expandida
-                                          ? CrossFadeState.showFirst
-                                          : CrossFadeState.showSecond,
-                                      firstChild: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                            16, 0, 16, 16),
-                                        child:
-                                            _buildCamposGrid(seccion.campos),
-                                      ),
-                                      secondChild: const SizedBox(
-                                          width: double.infinity),
-                                    ),
-                                  ],
+                                      const SizedBox(height: 12),
+                                      _buildCamposGrid(seccion.campos),
+                                    ],
+                                  ),
                                 ),
                               );
                             },
@@ -1708,7 +1681,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: _buildBottomActions(context),
+                child: _buildBottomActions(context, esConsumible),
               ),
             ],
           ),
@@ -1724,7 +1697,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
       final derecho = i + 1 < campos.length ? campos[i + 1] : null;
       filas.add(
         Padding(
-          padding: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.only(top: 8),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1767,7 +1740,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     );
   }
 
-  Widget _buildBottomActions(BuildContext sheetContext) {
+  Widget _buildBottomActions(BuildContext sheetContext, bool esConsumible) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
       decoration: const BoxDecoration(
@@ -1776,37 +1749,40 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
       ),
       child: Row(
         children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () {
-                final snKey = widget.config.snKey;
-                final serialNumber = _valor(snKey);
-                final serialFinal = serialNumber.isNotEmpty ? serialNumber : 'NA-00000000';
-                final nombre = _titulo();
+          // OCULTAR "VER QR" SI ES CONSUMIBLE
+          if (!esConsumible) ...[
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  final snKey = _config.snKey;
+                  final serialNumber = _valor(snKey);
+                  final serialFinal = serialNumber.isNotEmpty ? serialNumber : 'NA-00000000';
+                  final nombre = _titulo();
 
-                Navigator.push(
-                  sheetContext,
-                  MaterialPageRoute(
-                    builder: (_) => QrViewScreen(
-                      serialNumber: serialFinal,
-                      nombreActivo: nombre,
+                  Navigator.push(
+                    sheetContext,
+                    MaterialPageRoute(
+                      builder: (_) => QrViewScreen(
+                        serialNumber: serialFinal,
+                        nombreActivo: nombre,
+                      ),
                     ),
-                  ),
-                );
-              },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: primaryPurple,
-                side: const BorderSide(color: primaryPurple),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: primaryPurple,
+                  side: const BorderSide(color: primaryPurple),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                icon: const Icon(Icons.qr_code_rounded, size: 18),
+                label: const Text('Ver QR',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
               ),
-              icon: const Icon(Icons.qr_code_rounded, size: 18),
-              label: const Text('Ver QR',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             ),
-          ),
-          const SizedBox(width: 10),
+            const SizedBox(width: 10),
+          ],
           Expanded(
             child: ElevatedButton.icon(
               onPressed: () => _abrirEdicion(sheetContext),
@@ -1864,11 +1840,8 @@ class _ConfirmarBajaDialog extends StatefulWidget {
 class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
   static const primaryPurple = Color(0xFF532E7C);
   static const List<String> _motivos = [
-    'Fin de vida útil / Obsolescencia tecnológica',
-    'Fin de arrendamiento',
-    'Robo o extravío',
-    'Falla de hardware irreparable',
-    'Venta o donación',
+    'Consumible agotado / Vencido',
+    'Merma o daño',
     'Otro',
   ];
 
@@ -1904,7 +1877,7 @@ class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
       setState(() {
         _cargando = false;
         _error = AuthService.ultimoError.isEmpty
-            ? 'No se pudo dar de baja el activo'
+            ? 'No se pudo dar de baja el registro'
             : AuthService.ultimoError;
       });
     }
@@ -1939,7 +1912,7 @@ class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
               ),
               const SizedBox(height: 16),
               const Text(
-                '¿Dar de baja el activo?',
+                '¿Dar de baja el elemento?',
                 style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.bold,
@@ -1953,14 +1926,14 @@ class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
                   style: const TextStyle(
                       fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
                   children: [
-                    const TextSpan(text: 'El equipo '),
+                    const TextSpan(text: 'El registro '),
                     TextSpan(
                       text: widget.titulo,
                       style: const TextStyle(
                           fontWeight: FontWeight.bold, color: Colors.black87),
                     ),
                     const TextSpan(
-                        text: ' dejará de estar asignado y se moverá a la sección '),
+                        text: ' se moverá a la sección '),
                     TextSpan(
                       text: '"${widget.nombreSeccionBajas}"',
                       style: const TextStyle(
@@ -2166,7 +2139,7 @@ class _BajaExitosaDialog extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text(
-              '¡Activo dado de baja!',
+              '¡Elemento dado de baja!',
               style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
@@ -2180,7 +2153,7 @@ class _BajaExitosaDialog extends StatelessWidget {
                 style: const TextStyle(
                     fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
                 children: [
-                  const TextSpan(text: 'El equipo '),
+                  const TextSpan(text: 'El registro '),
                   TextSpan(
                     text: titulo,
                     style: const TextStyle(
@@ -2188,7 +2161,7 @@ class _BajaExitosaDialog extends StatelessWidget {
                   ),
                   const TextSpan(
                       text:
-                          ' ha sido removido del inventario activo y se movió a la sección '),
+                          ' ha sido removido y se movió a la sección '),
                   TextSpan(
                     text: '"$nombreSeccionBajas"',
                     style: const TextStyle(
@@ -2303,7 +2276,7 @@ class _ExportarDialogState extends State<_ExportarDialog> {
           name: 'Reporte_${widget.nombrePestana}.xlsx',
         );
         await Share.shareXFiles([xfile],
-            text: 'Reporte de activos: ${widget.nombrePestana}');
+            text: 'Reporte: ${widget.nombrePestana}');
       }
 
       if (mounted) {
@@ -2376,7 +2349,7 @@ class _ExportarDialogState extends State<_ExportarDialog> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Se generará el reporte de activos con las columnas seleccionadas. Puedes descargarlo o enviarlo a tu correo registrado:',
+              'Se generará el reporte con las columnas seleccionadas. Puedes descargarlo o enviarlo a tu correo registrado:',
               style: TextStyle(
                   fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
             ),
@@ -2520,7 +2493,7 @@ class _ExitoExportarDialog extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             const Text(
-              'El archivo Excel (.xlsx) con los activos seleccionados ha sido generado. Un enlace para descargarlo ha sido enviado a tu correo registrado:',
+              'El archivo Excel (.xlsx) ha sido generado. Un enlace para descargarlo ha sido enviado a tu correo registrado:',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
