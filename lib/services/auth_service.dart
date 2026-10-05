@@ -199,6 +199,19 @@ class AuthService {
     return {};
   }
 
+  static Future<Map<String, dynamic>> obtenerHojaBajas(
+      String spreadsheetIdOrUrl, String pestana) async {
+    final data = await _post({
+      'action': 'obtenerHojaBajas',
+      'spreadsheetId': spreadsheetIdOrUrl,
+      'pestana': pestana,
+    });
+    if (data != null && data['status'] == 'success' && data['data'] != null) {
+      return Map<String, dynamic>.from(data['data']);
+    }
+    return {'headers': <String>[], 'rows': <dynamic>[]};
+  }
+
   static Future<InventoryModel?> crearInventario({
     required String nombre,
     required String spreadsheet,

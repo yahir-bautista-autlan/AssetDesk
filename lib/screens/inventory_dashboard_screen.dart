@@ -1,12 +1,11 @@
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
-
 import 'package:excel/excel.dart' hide Border, TextSpan;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:universal_html/html.dart' as html;
 
@@ -46,6 +45,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
 
   bool _isLoading = true;
   Map<String, dynamic> _datosHojas = {};
+  final Set<String> _bajasEnCarga = {};
   InventoryModel? _inventarioActivo;
 
   late final Listenable _headerListenable =
@@ -75,6 +75,83 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     return filtro == 'Bajas' ? '${nombrePestana}__Bajas' : nombrePestana;
   }
 
+  Map<String, dynamic> _procesarHojaData(dynamic dataRaw) {
+    if (dataRaw is! Map || dataRaw['headers'] == null) {
+      return {'headers': <String>[], 'rows': <dynamic>[]};
+    }
+
+    final data = Map<String, dynamic>.from(dataRaw);
+    final List<dynamic> rawHeaders = List<dynamic>.from(data['headers']);
+    final List<String> uniqueHeaders = [];
+    final Map<String, int> conteoNombres = {};
+
+    for (var h in rawHeaders) {
+      final limpio = h.toString().trim();
+      if (limpio.isEmpty) continue;
+
+      if (conteoNombres.containsKey(limpio)) {
+        conteoNombres[limpio] = conteoNombres[limpio]! + 1;
+        uniqueHeaders.add('$limpio (${conteoNombres[limpio]})');
+      } else {
+        conteoNombres[limpio] = 1;
+        uniqueHeaders.add(limpio);
+      }
+    }
+
+    final List<dynamic> rows = List<dynamic>.from(data['rows'] ?? []);
+    final List<dynamic> rawOriginalHeaders = List<dynamic>.from(rawHeaders);
+
+    for (var row in rows) {
+      if (row is Map) {
+        final Map<String, dynamic> rowMap = Map<String, dynamic>.from(row);
+        final Map<String, int> conteoFila = {};
+
+        for (int i = 0; i < uniqueHeaders.length; i++) {
+          final originalName = rawOriginalHeaders.length > i
+              ? rawOriginalHeaders[i].toString().trim()
+              : '';
+          final assignedName = uniqueHeaders[i];
+
+          if (originalName.isNotEmpty && rowMap.containsKey(originalName)) {
+            final val = rowMap[originalName];
+            conteoFila[originalName] = (conteoFila[originalName] ?? 0) + 1;
+
+            if (conteoFila[originalName]! > 1) {
+              rowMap[assignedName] = val;
+            }
+          }
+        }
+        row.clear();
+        row.addAll(rowMap);
+      }
+    }
+
+    return {'headers': uniqueHeaders, 'rows': rows};
+  }
+
+  Future<void> _asegurarBajasCargadas(String nombrePestana) async {
+    final key = _dataKeyFor(nombrePestana, 'Bajas');
+    if (_datosHojas.containsKey(key) || _bajasEnCarga.contains(key)) return;
+
+    _bajasEnCarga.add(key);
+    if (mounted) setState(() {});
+
+    final sheetIdOrName = _inventarioActivo?.spreadsheetId ?? '';
+    final dataRaw = await AuthService.obtenerHojaBajas(sheetIdOrName, nombrePestana);
+    final procesado = _procesarHojaData(dataRaw);
+
+    _bajasEnCarga.remove(key);
+    if (!mounted) return;
+
+    setState(() {
+      _datosHojas[key] = procesado;
+    });
+
+    final nuevoMapa = Map<String, Set<String>>.from(_columnasPorPestana.value);
+    nuevoMapa[key] = Set<String>.from(procesado['headers'] as List<String>);
+    _columnasPorPestana.value = nuevoMapa;
+  }
+
   (List<String>, List<dynamic>) _obtenerDatosVisibles() {
     final index = _tabIndex.value;
     final nombrePestana = _tabs[index];
@@ -82,7 +159,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     final dataKey = _dataKeyFor(nombrePestana, filtro);
 
     final pestanaData = _datosHojas[dataKey] ?? {'headers': [], 'rows': []};
-    
+
     final allHeaders = List<String>.from(pestanaData['headers'] ?? []);
     final Set<String> activasSet = _columnasPorPestana.value[dataKey] ?? allHeaders.toSet();
     final List<String> headers = allHeaders.where((h) => activasSet.contains(h)).toList();
@@ -174,64 +251,18 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
 
     if (!mounted) return;
 
+    final datosProcesados = <String, dynamic>{};
     final columnasIniciales = <String, Set<String>>{};
 
     resultado.forEach((pestana, data) {
-      if (data is Map && data['headers'] != null) {
-        final List<dynamic> rawHeaders = List<dynamic>.from(data['headers']);
-        final List<String> uniqueHeaders = [];
-        final Map<String, int> conteoNombres = {};
-
-        for (var h in rawHeaders) {
-          final limpio = h.toString().trim();
-          if (limpio.isEmpty) continue;
-
-          if (conteoNombres.containsKey(limpio)) {
-            conteoNombres[limpio] = conteoNombres[limpio]! + 1;
-            uniqueHeaders.add('$limpio (${conteoNombres[limpio]})');
-          } else {
-            conteoNombres[limpio] = 1;
-            uniqueHeaders.add(limpio);
-          }
-        }
-
-        data['headers'] = uniqueHeaders;
-
-        if (data['rows'] is List) {
-          final List<dynamic> rows = data['rows'];
-          final List<dynamic> rawOriginalHeaders = List<dynamic>.from(rawHeaders);
-
-          for (var row in rows) {
-            if (row is Map) {
-              final Map<String, dynamic> rowMap =
-                  Map<String, dynamic>.from(row);
-              final Map<String, int> conteoFila = {};
-
-              for (int i = 0; i < uniqueHeaders.length; i++) {
-                final originalName = rawOriginalHeaders.length > i ? rawOriginalHeaders[i].toString().trim() : '';
-                final assignedName = uniqueHeaders[i];
-
-                if (originalName.isNotEmpty && rowMap.containsKey(originalName)) {
-                  final val = rowMap[originalName];
-                  conteoFila[originalName] = (conteoFila[originalName] ?? 0) + 1;
-
-                  if (conteoFila[originalName]! > 1) {
-                    rowMap[assignedName] = val;
-                  }
-                }
-              }
-              row.clear();
-              row.addAll(rowMap);
-            }
-          }
-        }
-
-        columnasIniciales[pestana] = uniqueHeaders.toSet();
-      }
+      final procesado = _procesarHojaData(data);
+      datosProcesados[pestana] = procesado;
+      columnasIniciales[pestana] = Set<String>.from(procesado['headers'] as List<String>);
     });
 
     setState(() {
-      _datosHojas = resultado;
+      _datosHojas = datosProcesados;
+      _bajasEnCarga.clear();
       _isLoading = false;
     });
     _columnasPorPestana.value = columnasIniciales;
@@ -843,6 +874,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
           onTap: () {
             HapticFeedback.selectionClick();
             _filtroEstado.value = titulo;
+            if (titulo == 'Bajas') {
+              _asegurarBajasCargadas(_tabs[_tabIndex.value]);
+            }
           },
           borderRadius: BorderRadius.circular(20),
           child: Container(
@@ -872,7 +906,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   Widget _buildTableArea() {
     final index = _tabIndex.value;
     final nombrePestana = _tabs[index];
-    final (headers, filteredRows) = _obtenerDatosVisibles();
+    final filtro = _filtroEstado.value;
+    final dataKey = _dataKeyFor(nombrePestana, filtro);
 
     if (_isLoading) {
       return const Center(
@@ -880,11 +915,21 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       );
     }
 
-    if (headers.isEmpty) {
+    if (filtro == 'Bajas' && !_datosHojas.containsKey(dataKey)) {
       return const Center(
+        child: CircularProgressIndicator(color: primaryPurple),
+      );
+    }
+
+    final (headers, filteredRows) = _obtenerDatosVisibles();
+
+    if (headers.isEmpty) {
+      return Center(
         child: Text(
-          'No se encontraron datos visibles con la configuración actual.',
-          style: TextStyle(color: Colors.black54, fontSize: 14),
+          filtro == 'Bajas'
+              ? 'No hay bajas registradas en esta pestaña.'
+              : 'No se encontraron datos visibles con la configuración actual.',
+          style: const TextStyle(color: Colors.black54, fontSize: 14),
         ),
       );
     }
@@ -1054,6 +1099,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                                     if (current != i) {
                                       HapticFeedback.selectionClick();
                                       _tabIndex.value = i;
+                                      if (_filtroEstado.value == 'Bajas') {
+                                        _asegurarBajasCargadas(_tabs[i]);
+                                      }
                                     }
                                   },
                                   child: Column(
