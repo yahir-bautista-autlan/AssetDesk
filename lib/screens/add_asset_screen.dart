@@ -170,7 +170,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   static const String _otroSentinel = '__otro__';
 
   bool get _esEdicion => widget.existingData != null;
-  bool get _esConsumible => widget.nombrePestana == 'Consumibles';
 
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, TextEditingController> _otroControllers = {};
@@ -186,7 +185,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   String? _errorGeneral;
   String _snOriginal = '';
 
-  late Set<int> _expandidas;
   late List<_SeccionCampos> _secciones;
 
   @override
@@ -202,7 +200,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
     _prepararCampos();
     _secciones = _agruparPorSeccion();
-    _expandidas = {0};
     _cargarResponsable();
   }
 
@@ -392,12 +389,12 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     String snCapturado = datos[snKey]?.trim() ?? '';
 
     if (snCapturado.isEmpty) {
-      int contador = 1;
+      int contador = widget.existingRows.length + 1;
       while (true) {
         String candidato = 'NA-${contador.toString().padLeft(8, '0')}';
         bool repetido = widget.existingRows.any((row) {
           if (_esEdicion && row[snKey]?.toString().trim() == _snOriginal) return false;
-          return row[snKey]?.toString().trim() == candidato;
+          return row.values.any((val) => val.toString().trim().toLowerCase() == candidato.toLowerCase());
         });
         if (!repetido) {
           snCapturado = candidato;
@@ -408,7 +405,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     } else {
       bool repetido = widget.existingRows.any((row) {
         if (_esEdicion && row[snKey]?.toString().trim() == _snOriginal) return false;
-        return row[snKey]?.toString().trim().toLowerCase() == snCapturado.toLowerCase();
+        return row.values.any((val) => val.toString().trim().toLowerCase() == snCapturado.toLowerCase());
       });
 
       if (repetido) {
@@ -497,7 +494,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       if (!mounted) return;
 
       if (exito) {
-        if (!_esEdicion && !_esConsumible) {
+        if (!_esEdicion && widget.nombrePestana != 'Consumibles') {
           final nombreActivo = datos['Nombre'] ?? 'Activo sin nombre';
           Navigator.pushReplacement(
             context,
@@ -570,7 +567,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                         constraints: BoxConstraints(maxWidth: contentWidth),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: _buildSecciones(columnas),
+                          children: _buildSeccionesPlanas(columnas),
                         ),
                       ),
                     ),
@@ -585,85 +582,33 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     );
   }
 
-  List<Widget> _buildSecciones(int columnas) {
+  List<Widget> _buildSeccionesPlanas(int columnas) {
     final widgets = <Widget>[];
     for (var i = 0; i < _secciones.length; i++) {
       final seccion = _secciones[i];
-      final expandida = _esConsumible || _expandidas.contains(i);
 
       widgets.add(
         Container(
           margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: const Color(0xFFFAFAFC),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFFEDEDF2)),
           ),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!_esConsumible)
-                InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () {
-                    setState(() {
-                      if (_expandidas.contains(i)) {
-                        _expandidas.remove(i);
-                      } else {
-                        _expandidas.add(i);
-                      }
-                    });
-                  },
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          seccion.titulo,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        AnimatedRotation(
-                          turns: expandida ? 0.5 : 0,
-                          duration: const Duration(milliseconds: 200),
-                          child: const Icon(Icons.keyboard_arrow_down,
-                              color: Color(0xFF6B7280)),
-                        ),
-                      ],
-                    ),
-                  ),
+              Text(
+                seccion.titulo,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: primaryPurple,
                 ),
-              if (_esConsumible)
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      seccion.titulo,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: primaryPurple,
-                      ),
-                    ),
-                  ),
-                ),
-              AnimatedCrossFade(
-                duration: const Duration(milliseconds: 200),
-                crossFadeState: expandida
-                    ? CrossFadeState.showFirst
-                    : CrossFadeState.showSecond,
-                firstChild: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: _buildCamposGrid(seccion.headers, columnas),
-                ),
-                secondChild: const SizedBox(width: double.infinity),
               ),
+              const SizedBox(height: 12),
+              _buildCamposGrid(seccion.headers, columnas),
             ],
           ),
         ),
@@ -762,7 +707,9 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
               : TextInputType.text,
           style: const TextStyle(fontSize: 14, color: Colors.black87),
           decoration: _decoracionBase(
-            hint: header == 'Numero de serie' ? 'Dejar en blanco para generar auto' : null,
+            hint: header.toLowerCase().contains('serie')
+                ? 'Dejar en blanco para generar auto'
+                : null,
           ),
         ),
       ],

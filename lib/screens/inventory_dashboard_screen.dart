@@ -206,7 +206,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       'Captura': 'Numero de Serie',
       'Impresoras': 'Num. de Serie',
       'Otros': 'NoSerie',
-      'Consumibles': 'Impresora',
+      'Consumibles': 'Numero de serie',
     };
 
     String? pestanaEncontrada;
@@ -1278,10 +1278,9 @@ const _otrosConfig = _DetailConfig(
   ],
 );
 
-// CONFIGURACIÓN DE CONSUMIBLES: LISTADO PLANO Y SIN ACORDEONES, SIN QR/RESPONSIVA
 const _consumiblesConfig = _DetailConfig(
   tituloKeys: ['Impresora', 'Modelo'],
-  snKey: 'Impresora',
+  snKey: 'Numero de serie',
   badge: 'Consumible',
   secciones: [
     _DetailSection('Información del Consumible', [
@@ -1291,6 +1290,7 @@ const _consumiblesConfig = _DetailConfig(
       _DetailField('Tipo', 'Tipo'),
       _DetailField('Departamento', 'Departamento'),
       _DetailField('Proveedor', 'Proveedor'),
+      _DetailField('Numero de serie', 'Número de Serie'),
       _DetailField('Responsable', 'Responsable'),
       _DetailField('Fecha', 'Fecha'),
       _DetailField('Comentarios', 'Comentarios'),
@@ -1446,6 +1446,88 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     }
   }
 
+  Future<void> _mostrarDialogoAsignar(BuildContext context) async {
+    final TextEditingController deptoController = TextEditingController(
+      text: _valor('Departamento'),
+    );
+    bool guardandoAsignacion = false;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text('Asignar Consumible',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Actualiza el departamento al que se asignará este consumible:',
+                      style: TextStyle(fontSize: 13, color: Colors.black54)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: deptoController,
+                    decoration: InputDecoration(
+                      labelText: 'Departamento destino',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: guardandoAsignacion ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: primaryPurple),
+                  onPressed: guardandoAsignacion
+                      ? null
+                      : () async {
+                          setStateDialog(() => guardandoAsignacion = true);
+                          final nuevoDepto = deptoController.text.trim();
+                          
+                          final datosActualizados = Map<String, String>.from(
+                            widget.fila.map((k, v) => MapEntry(k, v.toString())),
+                          );
+                          datosActualizados['Departamento'] = nuevoDepto;
+                          datosActualizados['Estatus'] = 'Asignado';
+
+                          final snOriginal = _valor(_config.snKey);
+
+                          final exito = await AuthService.editarActivo(
+                            spreadsheetId: widget.spreadsheetId,
+                            pestana: widget.nombrePestana,
+                            snOriginal: snOriginal,
+                            datos: datosActualizados,
+                          );
+
+                          if (!dialogContext.mounted) return;
+                          Navigator.pop(dialogContext);
+
+                          if (exito) {
+                            Navigator.pop(context);
+                            widget.onEditExitosa();
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Error al asignar el consumible')),
+                            );
+                          }
+                        },
+                  child: guardandoAsignacion
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Asignar', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final secciones = _seccionesConDatos();
@@ -1493,7 +1575,6 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             ),
                           ),
                         ),
-                        // MOSTRAR RESPONSIVA SOLO SI NO ES CONSUMIBLE
                         if (!esConsumible) ...[
                           InkWell(
                             onTap: () {
@@ -1615,7 +1696,6 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             itemBuilder: (context, index) {
                               final seccion = secciones[index];
                               
-                              // SI ES CONSUMIBLE, NO USAMOS ACORDEONES, MOSTRAMOS CONTENIDO DIRECTO Y PLANO
                               if (esConsumible) {
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 10),
@@ -1644,7 +1724,6 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                                 );
                               }
 
-                              // ACORDEÓN TRADICIONAL PARA LAS DEMÁS PESTAÑAS
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 10),
                                 decoration: BoxDecoration(
@@ -1749,7 +1828,25 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
       ),
       child: Row(
         children: [
-          // OCULTAR "VER QR" SI ES CONSUMIBLE
+          if (esConsumible && _valor('Estatus').toLowerCase() == 'stock') ...[
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _mostrarDialogoAsignar(sheetContext),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF16A34A),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                icon: const Icon(Icons.assignment_ind_outlined, size: 18),
+                label: const Text('Asignar',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
           if (!esConsumible) ...[
             Expanded(
               child: OutlinedButton.icon(
