@@ -31,7 +31,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   static const lightPurpleBg = Color(0xFFEFE8F6);
 
   static const double _colWidth = 170;
-  static const List<String> _tabs = ['Captura', 'Impresoras', 'Otros'];
+  // AGREGAMOS 'Consumibles' AL LISTADO DE TABS
+  static const List<String> _tabs = ['Captura', 'Impresoras', 'Otros', 'Consumibles'];
   static const List<String> _filtros = ['Todos', 'Asignados', 'Disponibles', 'Bajas'];
 
   final ValueNotifier<int> _tabIndex = ValueNotifier(0);
@@ -197,10 +198,12 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
 
     if (scannedSN == null || scannedSN.isEmpty) return;
 
+    // ACTUALIZAMOS EL MAPA PARA AGREGAR CONSUMIBLES
     const mapaSnKey = {
       'Captura': 'Numero de Serie',
       'Impresoras': 'Num. de Serie',
-      'Otros': 'NoSerie'
+      'Otros': 'NoSerie',
+      'Consumibles': 'NoSerie',
     };
 
     String? pestanaEncontrada;
@@ -509,12 +512,15 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     );
   }
 
+  // AGREGAMOS CONFIGURACIÓN PARA CONSUMIBLES
   _DetailConfig _configPorPestana(String nombrePestana) {
     switch (nombrePestana) {
       case 'Impresoras':
         return _impresorasConfig;
       case 'Otros':
         return _otrosConfig;
+      case 'Consumibles':
+        return _consumiblesConfig;
       default:
         return _capturaConfig;
     }
@@ -1037,16 +1043,18 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     );
   }
 
+  // AGREGAMOS EL ÍCONO DE CONSUMIBLES
   Widget _buildBottomNav() {
     final icons = [
       (CupertinoIcons.desktopcomputer, 'Captura'),
       (CupertinoIcons.printer, 'Impresoras'),
       (Icons.storage_rounded, 'Otros'),
+      (Icons.invert_colors, 'Consumibles'),
     ];
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.only(left: 36, right: 36, bottom: 6, top: 0),
+        padding: const EdgeInsets.only(left: 16, right: 16, bottom: 6, top: 0),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(29),
           child: BackdropFilter(
@@ -1173,10 +1181,12 @@ class _DetailConfig {
   });
 }
 
+// ACTUALIZAMOS MAPA DE BAJAS
 const Map<String, String> _mapaNombreBajas = {
   'Captura': 'Bajas',
   'Impresoras': 'Bajas_Impresoras',
   'Otros': 'Bajas_Otros',
+  'Consumibles': 'Bajas_Consumibles',
 };
 
 const _capturaConfig = _DetailConfig(
@@ -1191,8 +1201,7 @@ const _capturaConfig = _DetailConfig(
       _DetailField('Usuario de Dominio', 'Usuario de Dominio'),
       _DetailField('Responsable', 'Responsable'),
       _DetailField('Departamento', 'Departamento'),
-    ]),
-    _DetailSection('Hardware y Red', [
+    ]),_DetailSection('Hardware y Red', [
       _DetailField('Equipo', 'Equipo'),
       _DetailField('Modelo', 'Modelo'),
       _DetailField('Numero de Serie', 'Número de Serie'),
@@ -1272,6 +1281,30 @@ const _otrosConfig = _DetailConfig(
       _DetailField('Equipo', 'Equipo'),
       _DetailField('Modelo', 'Modelo'),
       _DetailField('NoSerie', 'Número de Serie'),
+    ]),
+    _DetailSection('Detalles adicionales', [
+      _DetailField('FechaRegistro', 'Fecha de Registro'),
+      _DetailField('Comentarios', 'Comentarios'),
+    ]),
+  ],
+);
+
+// CONFIGURACIÓN DE CONSUMIBLES NUEVA
+const _consumiblesConfig = _DetailConfig(
+  tituloKeys: ['Nombre', 'Articulo', 'Modelo'],
+  snKey: 'NoSerie',
+  badge: 'Consumible',
+  secciones: [
+    _DetailSection('Datos generales', [
+      _DetailField('Nombre', 'Nombre'),
+      _DetailField('Articulo', 'Artículo'),
+      _DetailField('Tipo', 'Tipo'),
+      _DetailField('Color', 'Color'),
+    ]),
+    _DetailSection('Inventario y Lotes', [
+      _DetailField('Modelo', 'Modelo'),
+      _DetailField('NoSerie', 'Número de Serie / Lote'),
+      _DetailField('Cantidad', 'Cantidad'),
     ]),
     _DetailSection('Detalles adicionales', [
       _DetailField('FechaRegistro', 'Fecha de Registro'),
