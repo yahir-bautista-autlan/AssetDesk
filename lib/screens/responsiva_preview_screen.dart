@@ -75,7 +75,6 @@ class ResponsivaPreviewScreen extends StatefulWidget {
 }
 
 class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
-  static const primaryPurple = Color(0xFF532E7C);
 
   late ResponsivaExtraData _datos;
   bool _cargandoInicial = true;
