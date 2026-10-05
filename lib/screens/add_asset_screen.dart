@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
-import 'qr_view_screen.dart'; // <-- IMPORTANTE: Importar la vista de QR
+import 'qr_view_screen.dart';
 
 const Map<String, String> _mapaSnKeyGlobal = {
   'Captura': 'Numero de Serie',
   'Impresoras': 'Num. de Serie',
   'Otros': 'NoSerie',
+  'Consumibles': 'Numero de serie',
 };
 
-// ... (Conserva tus mapas de categorías, secciones y configuraciones tal cual los tienes)
 const Map<String, String> _categoriaCaptura = {
   'Nombre': 'Datos generales',
   'Nombre Lógico del Equipo': 'Datos generales',
@@ -96,6 +96,24 @@ const List<String> _ordenSeccionesOtros = [
   'Detalles adicionales',
 ];
 
+const Map<String, String> _categoriaConsumibles = {
+  'Impresora': 'Información del Consumible',
+  'Modelo': 'Información del Consumible',
+  'Color': 'Información del Consumible',
+  'Tipo': 'Información del Consumible',
+  'Departamento': 'Información del Consumible',
+  'Proveedor': 'Información del Consumible',
+  'Numero de serie': 'Información del Consumible',
+  'Responsable': 'Información del Consumible',
+  'Fecha': 'Información del Consumible',
+  'Comentarios': 'Información del Consumible',
+  'Estatus': 'Información del Consumible',
+};
+
+const List<String> _ordenSeccionesConsumibles = [
+  'Información del Consumible',
+];
+
 class AddAssetScreen extends StatefulWidget {
   final String nombrePestana;
   final List<String> headers;
@@ -122,6 +140,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   static const Set<String> _camposEstaticos = {
     'Fecha/Hora',
     'FechaRegistro',
+    'Fecha',
     'Responsable',
     'Ubicación',
   };
@@ -133,6 +152,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     'Sistema Operativo',
     'Departamento',
     'Estatus',
+    'Color',
+    'Tipo',
   };
 
   static const Map<String, List<String>> _opcionesPorDefecto = {
@@ -141,12 +162,15 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     'Memoria': ['8GB', '16GB', '32GB', '64GB'],
     'Sistema Operativo': ['Windows 10', 'Windows 11', 'macOS', 'Linux'],
     'Departamento': [],
-    'Estatus': ['Activo', 'Pendiente de asignar'],
+    'Estatus': ['Stock', 'Asignado'],
+    'Color': ['Cyan', 'Magenta', 'Amarillo', 'Negro', 'Otro'],
+    'Tipo': ['EcoTank', 'Cartucho', 'Tóner', 'Botella'],
   };
 
   static const String _otroSentinel = '__otro__';
 
   bool get _esEdicion => widget.existingData != null;
+  bool get _esConsumible => widget.nombrePestana == 'Consumibles';
 
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, TextEditingController> _otroControllers = {};
@@ -244,8 +268,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         }
         if (header == 'Estatus') {
           combinadas.sort((a, b) {
-            if (a == 'Activo') return -1;
-            if (b == 'Activo') return 1;
+            if (a == 'Stock' || a == 'Activo') return -1;
+            if (b == 'Stock' || b == 'Activo') return 1;
             return a.compareTo(b);
           });
         } else {
@@ -268,6 +292,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         return _categoriaImpresoras;
       case 'Otros':
         return _categoriaOtros;
+      case 'Consumibles':
+        return _categoriaConsumibles;
       default:
         return _categoriaCaptura;
     }
@@ -279,6 +305,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         return _ordenSeccionesImpresoras;
       case 'Otros':
         return _ordenSeccionesOtros;
+      case 'Consumibles':
+        return _ordenSeccionesConsumibles;
       default:
         return _ordenSeccionesCaptura;
     }
@@ -321,7 +349,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   }
 
   String _valorEstaticoPara(String header) {
-    if (header == 'Fecha/Hora' || header == 'FechaRegistro') {
+    if (header == 'Fecha/Hora' || header == 'FechaRegistro' || header == 'Fecha') {
       if (_esEdicion) {
         final existente = widget.existingData?[header]?.toString().trim();
         if (existente != null && existente.isNotEmpty) return existente;
@@ -357,14 +385,12 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     });
   }
 
-  // --- NUEVA LÓGICA: GENERAR/VALIDAR NUMERO DE SERIE ÚNICO ---
   String _obtenerYValidarNumeroDeSerie(Map<String, String> datos) {
     final snKey = _mapaSnKeyGlobal[widget.nombrePestana];
-    if (snKey == null) return 'NA-00000000';
+    if (snKey == null || !widget.headers.contains(snKey)) return 'NA-00000000';
 
     String snCapturado = datos[snKey]?.trim() ?? '';
 
-    // Si no se capturó número de serie, generar por defecto NA-00000000 asegurando unicidad
     if (snCapturado.isEmpty) {
       int contador = 1;
       while (true) {
@@ -380,7 +406,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         contador++;
       }
     } else {
-      // Validar si el número de serie capturado ya existe en otro activo
       bool repetido = widget.existingRows.any((row) {
         if (_esEdicion && row[snKey]?.toString().trim() == _snOriginal) return false;
         return row[snKey]?.toString().trim().toLowerCase() == snCapturado.toLowerCase();
@@ -451,7 +476,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     });
 
     try {
-      // Aplicar validación de número de serie único o por defecto
       final snFinal = _obtenerYValidarNumeroDeSerie(datos);
 
       bool exito;
@@ -473,8 +497,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       if (!mounted) return;
 
       if (exito) {
-        if (!_esEdicion) {
-          // Si es nuevo activo, abrir directamente la vista de código QR con el diálogo de éxito
+        if (!_esEdicion && !_esConsumible) {
           final nombreActivo = datos['Nombre'] ?? 'Activo sin nombre';
           Navigator.pushReplacement(
             context,
@@ -566,7 +589,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     final widgets = <Widget>[];
     for (var i = 0; i < _secciones.length; i++) {
       final seccion = _secciones[i];
-      final expandida = _expandidas.contains(i);
+      final expandida = _esConsumible || _expandidas.contains(i);
 
       widgets.add(
         Container(
@@ -578,41 +601,58 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
           ),
           child: Column(
             children: [
-              InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () {
-                  setState(() {
-                    if (expandida) {
-                      _expandidas.remove(i);
-                    } else {
-                      _expandidas.add(i);
-                    }
-                  });
-                },
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        seccion.titulo,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+              if (!_esConsumible)
+                InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    setState(() {
+                      if (_expandidas.contains(i)) {
+                        _expandidas.remove(i);
+                      } else {
+                        _expandidas.add(i);
+                      }
+                    });
+                  },
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          seccion.titulo,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
                         ),
-                      ),
-                      AnimatedRotation(
-                        turns: expandida ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 200),
-                        child: const Icon(Icons.keyboard_arrow_down,
-                            color: Color(0xFF6B7280)),
-                      ),
-                    ],
+                        AnimatedRotation(
+                          turns: expandida ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 200),
+                          child: const Icon(Icons.keyboard_arrow_down,
+                              color: Color(0xFF6B7280)),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              if (_esConsumible)
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      seccion.titulo,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: primaryPurple,
+                      ),
+                    ),
+                  ),
+                ),
               AnimatedCrossFade(
                 duration: const Duration(milliseconds: 200),
                 crossFadeState: expandida
@@ -721,7 +761,9 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
               ? TextInputType.number
               : TextInputType.text,
           style: const TextStyle(fontSize: 14, color: Colors.black87),
-          decoration: _decoracionBase(),
+          decoration: _decoracionBase(
+            hint: header == 'Numero de serie' ? 'Dejar en blanco para generar auto' : null,
+          ),
         ),
       ],
     );
