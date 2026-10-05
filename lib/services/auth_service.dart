@@ -17,7 +17,7 @@ class AuthService {
     return digest.toString().toLowerCase();
   }
 
-    static Future<Map<String, dynamic>?> _post(Map<String, dynamic> body) async {
+  static Future<Map<String, dynamic>?> _post(Map<String, dynamic> body) async {
     ultimoError = '';
     try {
       var response = await http.post(
@@ -234,7 +234,6 @@ class AuthService {
     return data != null && data['status'] == 'success';
   }
 
-
   static Future<bool> agregarActivo({
     required String spreadsheetId,
     required String pestana,
@@ -249,5 +248,19 @@ class AuthService {
     return data != null && data['status'] == 'success';
   }
 
+  static Future<bool> editarActivo({
+    required String spreadsheetId,
+    required String pestana,
+    required String snOriginal,
+    required Map<String, String> datos,
+  }) async {
+    final data = await _post({
+      'action': 'editarActivo',
+      'spreadsheetId': spreadsheetId,
+      'pestana': pestana,
+      'snOriginal': snOriginal,
+      'datos': datos,
+    });
+    return data != null && data['status'] == 'success';
+  }
 }
-

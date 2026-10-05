@@ -1,11 +1,21 @@
-import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
+
+import 'package:excel/excel.dart' hide Border, TextSpan;
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:universal_html/html.dart' as html;
+
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
 import 'add_asset_screen.dart';
+import 'qr_scanner_screen.dart';
+import 'qr_view_screen.dart';
+import 'responsiva_preview_screen.dart';
 
 class InventoryDashboardScreen extends StatefulWidget {
   final InventoryModel? inventario;
@@ -63,6 +73,97 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
 
   String _dataKeyFor(String nombrePestana, String filtro) {
     return filtro == 'Bajas' ? '${nombrePestana}__Bajas' : nombrePestana;
+  }
+
+  (List<String>, List<dynamic>) _obtenerDatosVisibles() {
+    final index = _tabIndex.value;
+    final nombrePestana = _tabs[index];
+    final filtro = _filtroEstado.value;
+    final dataKey = _dataKeyFor(nombrePestana, filtro);
+
+    final pestanaData = _datosHojas[dataKey] ?? {'headers': [], 'rows': []};
+    
+    final allHeaders = List<String>.from(pestanaData['headers'] ?? []);
+    final Set<String> activasSet = _columnasPorPestana.value[dataKey] ?? allHeaders.toSet();
+    final List<String> headers = allHeaders.where((h) => activasSet.contains(h)).toList();
+
+    final List<dynamic> rows = List<dynamic>.from(pestanaData['rows'] ?? []);
+    final query = _searchQuery.value.toLowerCase().trim();
+
+    final filteredRows = rows.where((row) {
+      if (row is! Map) return false;
+
+      if (filtro == 'Asignados' || filtro == 'Disponibles') {
+        String estatusValor = '';
+        row.forEach((k, v) {
+          if (k.toString().toLowerCase().trim() == 'estatus') {
+            estatusValor = v.toString().toLowerCase().trim();
+          }
+        });
+
+        if (filtro == 'Asignados' && estatusValor != 'activo') return false;
+        if (filtro == 'Disponibles' && estatusValor != 'pendiente de asignar') return false;
+      }
+
+      if (query.isEmpty) return true;
+      return row.entries.any((entry) => entry.value.toString().toLowerCase().contains(query));
+    }).toList();
+
+    return (headers, filteredRows);
+  }
+
+  Future<void> _escanearQR() async {
+    final String? scannedSN = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const QrScannerScreen()),
+    );
+
+    if (scannedSN == null || scannedSN.isEmpty) return;
+
+    const mapaSnKey = {
+      'Captura': 'Numero de Serie',
+      'Impresoras': 'Num. de Serie',
+      'Otros': 'NoSerie'
+    };
+
+    String? pestanaEncontrada;
+    Map<String, dynamic>? activoEncontrado;
+
+    for (var entry in _datosHojas.entries) {
+      final pestana = entry.key;
+      final datosPestana = entry.value;
+      final snKey = mapaSnKey[pestana];
+
+      if (snKey == null || pestana.contains('__Bajas')) continue;
+
+      final rows = datosPestana['rows'] as List<dynamic>? ?? [];
+
+      for (var row in rows) {
+        final Map<String, dynamic> fila = Map<String, dynamic>.from(row);
+        final String currentSN = fila[snKey]?.toString().trim() ?? '';
+        
+        if (currentSN.toLowerCase() == scannedSN.toLowerCase().trim()) {
+          pestanaEncontrada = pestana;
+          activoEncontrado = fila;
+          break;
+        }
+      }
+      if (activoEncontrado != null) break;
+    }
+
+    if (activoEncontrado != null && pestanaEncontrada != null) {
+      _abrirDetalle(activoEncontrado, pestanaEncontrada);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se encontró ningún activo con el SN: $scannedSN'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _cargarDatosRemotos() async {
@@ -389,6 +490,12 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   }
 
   void _abrirDetalle(Map<String, dynamic> fila, String nombrePestana) {
+    final mainData = _datosHojas[nombrePestana] ?? {'headers': [], 'rows': []};
+    final mainHeaders = List<String>.from(mainData['headers'] ?? []);
+    final mainRows = List<dynamic>.from(mainData['rows'] ?? [])
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -398,12 +505,16 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
         config: _configPorPestana(nombrePestana),
         nombrePestana: nombrePestana,
         spreadsheetId: _inventarioActivo?.spreadsheetId ?? '',
+        headers: mainHeaders,
+        existingRows: mainRows,
+        inventario: _inventarioActivo,
         onBajaExitosa: _cargarDatosRemotos,
+        onEditExitosa: _cargarDatosRemotos,
       ),
     );
   }
 
-    Future<void> _abrirFormularioAgregar(
+  Future<void> _abrirFormularioAgregar(
       String nombrePestana, List<String> headers, List<dynamic> rows) async {
     if (headers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -470,6 +581,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
             pressedOpacity: 0.7,
             onPressed: () {
               HapticFeedback.lightImpact();
+              _escanearQR();
             },
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -615,6 +727,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                   _datosHojas[dataKey] ?? {'headers': [], 'rows': []};
               final allHeaders =
                   List<String>.from(pestanaData['headers'] ?? []);
+
               final mainData = _datosHojas[nombrePestana] ?? {'headers': [], 'rows': []};
               final mainHeaders = List<String>.from(mainData['headers'] ?? []);
               final mainRows = List<dynamic>.from(mainData['rows'] ?? []);
@@ -646,7 +759,27 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      final (activeHeaders, filteredRows) = _obtenerDatosVisibles();
+                      
+                      if (activeHeaders.isEmpty || filteredRows.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('No hay datos visibles para exportar.')),
+                        );
+                        return;
+                      }
+
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) => _ExportarDialog(
+                          nombrePestana: nombrePestana,
+                          headers: activeHeaders,
+                          rows: filteredRows,
+                        ),
+                      );
+                    },
                     style: OutlinedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
@@ -739,42 +872,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   Widget _buildTableArea() {
     final index = _tabIndex.value;
     final nombrePestana = _tabs[index];
-    final filtro = _filtroEstado.value;
-    final dataKey = _dataKeyFor(nombrePestana, filtro);
-
-    final pestanaData =
-        _datosHojas[dataKey] ?? {'headers': [], 'rows': []};
-
-    final List<String> allHeaders =
-        List<String>.from(pestanaData['headers'] ?? []);
-    final Set<String> activasSet =
-        _columnasPorPestana.value[dataKey] ?? allHeaders.toSet();
-    final List<String> headers =
-        allHeaders.where((h) => activasSet.contains(h)).toList();
-
-    final List<dynamic> rows = List<dynamic>.from(pestanaData['rows'] ?? []);
-    final query = _searchQuery.value.toLowerCase().trim();
-
-    final filteredRows = rows.where((row) {
-      if (row is! Map) return false;
-
-      if (filtro == 'Asignados' || filtro == 'Disponibles') {
-        String estatusValor = '';
-        row.forEach((k, v) {
-          if (k.toString().toLowerCase().trim() == 'estatus') {
-            estatusValor = v.toString().toLowerCase().trim();
-          }
-        });
-
-        if (filtro == 'Asignados' && estatusValor != 'activo') return false;
-        if (filtro == 'Disponibles' &&
-            estatusValor != 'pendiente de asignar') return false;
-      }
-
-      if (query.isEmpty) return true;
-      return row.entries
-          .any((entry) => entry.value.toString().toLowerCase().contains(query));
-    }).toList();
+    final (headers, filteredRows) = _obtenerDatosVisibles();
 
     if (_isLoading) {
       return const Center(
@@ -783,12 +881,10 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     }
 
     if (headers.isEmpty) {
-      return Center(
+      return const Center(
         child: Text(
-          filtro == 'Bajas'
-              ? 'No hay bajas registradas en esta pestaña.'
-              : 'No se encontraron datos en esta pestaña.',
-          style: const TextStyle(color: Colors.black54, fontSize: 14),
+          'No se encontraron datos visibles con la configuración actual.',
+          style: TextStyle(color: Colors.black54, fontSize: 14),
         ),
       );
     }
@@ -1038,7 +1134,7 @@ const Map<String, String> _mapaNombreBajas = {
 const _capturaConfig = _DetailConfig(
   tituloKeys: ['Nombre Lógico del Equipo', 'Nombre'],
   snKey: 'Numero de Serie',
-  badge: 'Responsiva',
+  badge: 'Activo',
   secciones: [
     _DetailSection('Datos generales', [
       _DetailField('Nombre', 'Nombre'),
@@ -1141,14 +1237,22 @@ class _DeviceDetailSheet extends StatefulWidget {
   final _DetailConfig config;
   final String nombrePestana;
   final String spreadsheetId;
+  final List<String> headers;
+  final List<Map<String, dynamic>> existingRows;
+  final InventoryModel? inventario;
   final VoidCallback onBajaExitosa;
+  final VoidCallback onEditExitosa;
 
   const _DeviceDetailSheet({
     required this.fila,
     required this.config,
     required this.nombrePestana,
     required this.spreadsheetId,
+    required this.headers,
+    required this.existingRows,
+    required this.inventario,
     required this.onBajaExitosa,
+    required this.onEditExitosa,
   });
 
   @override
@@ -1253,6 +1357,26 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     widget.onBajaExitosa();
   }
 
+  Future<void> _abrirEdicion(BuildContext sheetContext) async {
+    final editado = await Navigator.push<bool>(
+      sheetContext,
+      MaterialPageRoute(
+        builder: (_) => AddAssetScreen(
+          nombrePestana: widget.nombrePestana,
+          headers: widget.headers,
+          existingRows: widget.existingRows,
+          inventario: widget.inventario,
+          existingData: widget.fila,
+        ),
+      ),
+    );
+
+    if (editado == true && mounted) {
+      Navigator.pop(context);
+      widget.onEditExitosa();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final secciones = _seccionesConDatos();
@@ -1299,28 +1423,43 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             ),
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE3EBFF),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.description_outlined,
-                                  size: 14, color: Color(0xFF3457D5)),
-                              const SizedBox(width: 4),
-                              Text(
-                                widget.config.badge,
-                                style: const TextStyle(
-                                  color: Color(0xFF3457D5),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
+                        InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ResponsivaPreviewScreen(
+                                  fila: widget.fila,
+                                  nombrePestana: widget.nombrePestana,
+                                  inventario: widget.inventario,
                                 ),
                               ),
-                            ],
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE3EBFF),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.description_outlined,
+                                    size: 14, color: Color(0xFF3457D5)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Responsiva',
+                                  style: TextStyle(
+                                    color: Color(0xFF3457D5),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1558,7 +1697,22 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
         children: [
           Expanded(
             child: OutlinedButton.icon(
-              onPressed: () {},
+              onPressed: () {
+                final snKey = widget.config.snKey;
+                final serialNumber = _valor(snKey);
+                final serialFinal = serialNumber.isNotEmpty ? serialNumber : 'NA-00000000';
+                final nombre = _titulo();
+
+                Navigator.push(
+                  sheetContext,
+                  MaterialPageRoute(
+                    builder: (_) => QrViewScreen(
+                      serialNumber: serialFinal,
+                      nombreActivo: nombre,
+                    ),
+                  ),
+                );
+              },
               style: OutlinedButton.styleFrom(
                 foregroundColor: primaryPurple,
                 side: const BorderSide(color: primaryPurple),
@@ -1574,7 +1728,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
           const SizedBox(width: 10),
           Expanded(
             child: ElevatedButton.icon(
-              onPressed: () {},
+              onPressed: () => _abrirEdicion(sheetContext),
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryPurple,
                 foregroundColor: Colors.white,
@@ -1749,7 +1903,7 @@ class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
               ),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
-                value: _motivoSeleccionado,
+                initialValue: _motivoSeleccionado,
                 isExpanded: true,
                 items: _motivos
                     .map((m) => DropdownMenuItem(
@@ -1997,6 +2151,331 @@ class _BajaExitosaDialog extends StatelessWidget {
                   elevation: 0,
                   shape:
                       RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Entendido',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExportarDialog extends StatefulWidget {
+  final String nombrePestana;
+  final List<String> headers;
+  final List<dynamic> rows;
+
+  const _ExportarDialog({
+    required this.nombrePestana,
+    required this.headers,
+    required this.rows,
+  });
+
+  @override
+  State<_ExportarDialog> createState() => _ExportarDialogState();
+}
+
+class _ExportarDialogState extends State<_ExportarDialog> {
+  static const primaryPurple = Color(0xFF532E7C);
+  bool _isProcessing = false;
+
+  Future<void> _procesarExcel(bool descargar) async {
+    setState(() => _isProcessing = true);
+    final excel = Excel.createExcel();    
+    excel.rename('Sheet1', 'Reporte');
+    final sheet = excel['Reporte'];
+
+    sheet.appendRow(widget.headers.map((h) => TextCellValue(h)).toList());
+
+    for (var row in widget.rows) {
+      if (row is Map) {
+        final rowData = widget.headers
+            .map((h) => TextCellValue(row[h]?.toString() ?? ''))
+            .toList();
+        sheet.appendRow(rowData);
+      }
+    }
+
+    final bytes = excel.encode()!;
+
+    if (descargar) {
+      if (kIsWeb) {
+        final base64data = base64Encode(bytes);
+        final a = html.AnchorElement(
+            href:
+                'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,$base64data');
+        a.download = 'Reporte_${widget.nombrePestana}.xlsx';
+        a.click();
+        a.remove();
+      } else {
+        final xfile = XFile.fromData(
+          Uint8List.fromList(bytes),
+          mimeType:
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          name: 'Reporte_${widget.nombrePestana}.xlsx',
+        );
+        await Share.shareXFiles([xfile],
+            text: 'Reporte de activos: ${widget.nombrePestana}');
+      }
+
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        Navigator.pop(context);
+      }
+    } else {
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        Navigator.pop(context);
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const _ExitoExportarDialog(),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF16A34A),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Center(
+                    child: Text('X',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 22)),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Exportar reporte',
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87)),
+                      Text('Archivo Excel (.xlsx)',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF16A34A))),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Se generará el reporte de activos con las columnas seleccionadas. Puedes descargarlo o enviarlo a tu correo registrado:',
+              style: TextStyle(
+                  fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFCFAFF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE9E0F2)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.mail_outline, color: primaryPurple, size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text('usuario@autlan.com',
+                        style: TextStyle(
+                            color: primaryPurple,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.end,
+              children: [
+                OutlinedButton(
+                  onPressed:
+                      _isProcessing ? null : () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    side: const BorderSide(color: Color(0xFFE5E7EB)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                  ),
+                  child: const Text('Cancelar',
+                      style: TextStyle(
+                          color: Colors.black54, fontWeight: FontWeight.w600)),
+                ),
+                OutlinedButton(
+                  onPressed: _isProcessing ? null : () => _procesarExcel(true),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    side: const BorderSide(color: primaryPurple),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                  ),
+                  child: _isProcessing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: primaryPurple))
+                      : const Text('Descargar',
+                          style: TextStyle(
+                              color: primaryPurple,
+                              fontWeight: FontWeight.w600)),
+                ),
+                ElevatedButton(
+                  onPressed: _isProcessing ? null : () => _procesarExcel(false),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryPurple,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                  ),
+                  child: _isProcessing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Text('Enviar correo',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExitoExportarDialog extends StatelessWidget {
+  const _ExitoExportarDialog();
+
+  static const primaryPurple = Color(0xFF532E7C);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.mail_outline_rounded,
+                    size: 64, color: primaryPurple),
+                Positioned(
+                  right: -4,
+                  bottom: -4,
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF16A34A),
+                      shape: BoxShape.circle,
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child:
+                        const Icon(Icons.check, color: Colors.white, size: 16),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              '¡Reporte enviado exitosamente!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'El archivo Excel (.xlsx) con los activos seleccionados ha sido generado. Un enlace para descargarlo ha sido enviado a tu correo registrado:',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: primaryPurple),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.mail_outline, color: primaryPurple, size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text('usuario@autlan.com',
+                        style: TextStyle(
+                            color: primaryPurple,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryPurple,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: const Text('Entendido',

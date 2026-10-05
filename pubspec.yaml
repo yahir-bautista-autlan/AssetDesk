@@ -16,6 +16,14 @@ dependencies:
   crypto: ^3.0.3
   shared_preferences: ^2.2.2
   cupertino_icons: ^1.0.8
+  qr_flutter: ^4.1.0
+  image_gallery_saver: ^2.0.3
+  universal_html: ^2.3.0
+  mobile_scanner: ^7.4.2
+  excel: ^4.0.6
+  share_plus: ^13.3.1
+  pdf: ^3.12.0
+  printing: ^5.14.3
 
 dev_dependencies:
   flutter_test:
@@ -28,6 +36,7 @@ flutter:
   assets:
     - assets/logo_autlan.png
     - assets/images/warehouse_icon.png
+    - assets/plantilla_responsiva.png
 
 flutter_launcher_icons:
   android: true
