@@ -225,45 +225,43 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     }
 
     final pdf = pw.Document();
-    final headerColor = PdfColor.fromHex('#532E7C');
+    final primaryColor = PdfColor.fromHex('#224488');
+    final tableHeaderBg = PdfColor.fromHex('#E6EEF4');
 
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.letter,
-        margin: const pw.EdgeInsets.fromLTRB(36, 32, 36, 24),
+        margin: const pw.EdgeInsets.fromLTRB(36, 30, 36, 24),
         build: (pw.Context context) {
-          return pw.Stack(
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Positioned(
-                top: 0,
-                right: 0,
-                child: pw.Text('Fecha: $fechaStr',
-                    style: const pw.TextStyle(fontSize: 9)),
-              ),
-              pw.Column(
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Center(
+                  if (logo != null)
+                    pw.Container(
+                      width: 75,
+                      height: 50,
+                      child: pw.Image(logo, fit: pw.BoxFit.contain),
+                    )
+                  else
+                    pw.SizedBox(width: 75),
+                  pw.Expanded(
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
-                        if (logo != null)
-                          pw.Container(
-                            width: 60,
-                            height: 60,
-                            margin: const pw.EdgeInsets.only(bottom: 4),
-                            child: pw.Image(logo),
-                          ),
                         pw.Text(
-                          nombreEmpresa,
+                          'HIDROELÉCTRICA $nombreEmpresa',
                           textAlign: pw.TextAlign.center,
                           style: pw.TextStyle(
-                            fontSize: 16,
+                            fontSize: 15,
                             fontWeight: pw.FontWeight.bold,
-                            color: headerColor,
+                            color: primaryColor,
                           ),
                         ),
-                        pw.SizedBox(height: 2),
+                        pw.SizedBox(height: 3),
                         pw.Text(
                           'HOJA RESPONSIVA DE EQUIPO',
                           textAlign: pw.TextAlign.center,
@@ -275,52 +273,81 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                       ],
                     ),
                   ),
-                  pw.SizedBox(height: 16),
-                  pw.Text(
-                    'Descripción del equipo:',
-                    style: pw.TextStyle(
-                        fontSize: 10, fontWeight: pw.FontWeight.bold),
+                  pw.Container(
+                    width: 90,
+                    alignment: pw.Alignment.topRight,
+                    child: pw.Text('Fecha: $fechaStr',
+                        style: const pw.TextStyle(fontSize: 8.5)),
                   ),
-                  pw.SizedBox(height: 4),
-                  pw.Table(
-                    border: pw.TableBorder.all(color: headerColor, width: 0.7),
-                    columnWidths: const {
-                      0: pw.FlexColumnWidth(2),
-                      1: pw.FlexColumnWidth(2),
-                      2: pw.FlexColumnWidth(2.8),
-                      3: pw.FlexColumnWidth(2.4),
-                    },
-                    children: [
-                      pw.TableRow(
-                        decoration: pw.BoxDecoration(
-                            color: PdfColor.fromHex('#EFE8F6')),
-                        children: [
-                          _celdaTabla('Equipo', negrita: true),
-                          _celdaTabla('Marca', negrita: true),
-                          _celdaTabla('Modelo', negrita: true),
-                          _celdaTabla('Serie', negrita: true),
-                        ],
+                ],
+              ),
+              pw.SizedBox(height: 14),
+              pw.Text(
+                'Descripción del equipo:',
+                style: pw.TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: pw.FontWeight.bold,
+                    color: primaryColor),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Container(
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: primaryColor, width: 1),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Column(
+                  children: [
+                    pw.Table(
+                      border: pw.TableBorder(
+                        horizontalInside:
+                            pw.BorderSide(color: primaryColor, width: 0.5),
+                        verticalInside:
+                            pw.BorderSide(color: primaryColor, width: 0.5),
                       ),
-                      for (final fila in filasTabla)
-                        pw.TableRow(children: [
-                          _celdaTabla(fila[0]),
-                          _celdaTabla(fila[1]),
-                          _celdaTabla(fila[2]),
-                          _celdaTabla(fila[3]),
-                        ]),
-                    ],
-                  ),
-                  if (_datos.otrosSoftware.isNotEmpty) ...[
+                      columnWidths: const {
+                        0: pw.FlexColumnWidth(1.8),
+                        1: pw.FlexColumnWidth(1.8),
+                        2: pw.FlexColumnWidth(2.6),
+                        3: pw.FlexColumnWidth(2.2),
+                      },
+                      children: [
+                        pw.TableRow(
+                          decoration: pw.BoxDecoration(
+                            color: tableHeaderBg,
+                            borderRadius: const pw.BorderRadius.only(
+                              topLeft: pw.Radius.circular(7),
+                              topRight: pw.Radius.circular(7),
+                            ),
+                          ),
+                          children: [
+                            _celdaTabla('Equipo', negrita: true),
+                            _celdaTabla('Marca', negrita: true),
+                            _celdaTabla('Modelo', negrita: true),
+                            _celdaTabla('Serie', negrita: true),
+                          ],
+                        ),
+                        for (final fila in filasTabla)
+                          pw.TableRow(children: [
+                            _celdaTabla(fila[0]),
+                            _celdaTabla(fila[1]),
+                            _celdaTabla(fila[2]),
+                            _celdaTabla(fila[3]),
+                          ]),
+                      ],
+                    ),
                     pw.Container(
                       width: double.infinity,
+                      padding: const pw.EdgeInsets.all(5),
                       decoration: pw.BoxDecoration(
+                        color: tableHeaderBg,
                         border: pw.Border(
-                          left: pw.BorderSide(color: headerColor, width: 0.7),
-                          right: pw.BorderSide(color: headerColor, width: 0.7),
-                          bottom: pw.BorderSide(color: headerColor, width: 0.7),
+                            top: pw.BorderSide(
+                                color: primaryColor, width: 0.5)),
+                        borderRadius: const pw.BorderRadius.only(
+                          bottomLeft: pw.Radius.circular(7),
+                          bottomRight: pw.Radius.circular(7),
                         ),
                       ),
-                      padding: const pw.EdgeInsets.all(5),
                       child: pw.Text(
                         'Otros: ${_datos.otrosSoftware}',
                         style: pw.TextStyle(
@@ -328,48 +355,48 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                       ),
                     ),
                   ],
-                  pw.SizedBox(height: 14),
-                  pw.Text('Responsable de TI:',
-                      style: pw.TextStyle(
-                          fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 4),
-                  _cajaDatos(
-                    headerColor: headerColor,
-                    nombre: _datos.nombreResponsableTI,
-                    empresa: _datos.empresaResponsableTI,
-                    correo: _datos.correoResponsableTI,
-                  ),
-                  pw.SizedBox(height: 12),
-                  pw.Text('Datos de quien Recibe el Equipo:',
-                      style: pw.TextStyle(
-                          fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 4),
-                  _cajaDatos(
-                    headerColor: headerColor,
-                    nombre: _datos.nombreRecibe,
-                    empresa: _datos.empresaRecibe,
-                    correo: _datos.correoRecibe,
-                  ),
-                  pw.SizedBox(height: 14),
+                ),
+              ),
+              pw.SizedBox(height: 10),
+              pw.Text('Responsable de TI:',
+                  style: pw.TextStyle(
+                      fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 3),
+              _cajaDatos(
+                borderColor: primaryColor,
+                nombre: _datos.nombreResponsableTI,
+                empresa: _datos.empresaResponsableTI,
+                correo: _datos.correoResponsableTI,
+              ),
+              pw.SizedBox(height: 8),
+              pw.Text('Datos de quien Recibe el Equipo:',
+                  style: pw.TextStyle(
+                      fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 3),
+              _cajaDatos(
+                borderColor: primaryColor,
+                nombre: _datos.nombreRecibe,
+                empresa: _datos.empresaRecibe,
+                correo: _datos.correoRecibe,
+              ),
+              pw.SizedBox(height: 10),
+              pw.Text(
+                'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
+                'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
+                'presentar y/o a devolver en el momento en que me sea requerido.',
+                style: const pw.TextStyle(fontSize: 7.5, height: 1.2),
+              ),
+              pw.Spacer(),
+              pw.Divider(color: PdfColor.fromHex('#CCCCCC'), thickness: 0.5),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
                   pw.Text(
-                    'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
-                    'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
-                    'presentar y/o a devolver en el momento en que me sea requerido.',
-                    style: const pw.TextStyle(fontSize: 8, height: 1.3),
+                    'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73980',
+                    style: const pw.TextStyle(fontSize: 6.5),
                   ),
-                  pw.Spacer(),
-                  pw.Divider(color: PdfColor.fromHex('#CCCCCC'), thickness: 0.5),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text(
-                        'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73980',
-                        style: const pw.TextStyle(fontSize: 6.5),
-                      ),
-                      pw.Text('F-FSIS-AXO/Rev.02',
-                          style: const pw.TextStyle(fontSize: 6.5)),
-                    ],
-                  ),
+                  pw.Text('F-FSIS-AXO/Rev.02',
+                      style: const pw.TextStyle(fontSize: 6.5)),
                 ],
               ),
             ],
@@ -383,11 +410,11 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
 
   pw.Widget _celdaTabla(String texto, {bool negrita = false}) {
     return pw.Padding(
-      padding: const pw.EdgeInsets.all(4.5),
+      padding: const pw.EdgeInsets.all(4),
       child: pw.Text(
         texto,
         style: pw.TextStyle(
-          fontSize: 8.5,
+          fontSize: 8,
           fontWeight: negrita ? pw.FontWeight.bold : pw.FontWeight.normal,
         ),
       ),
@@ -395,37 +422,37 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
   }
 
   pw.Widget _cajaDatos({
-    required PdfColor headerColor,
+    required PdfColor borderColor,
     required String nombre,
     required String empresa,
     required String correo,
   }) {
     pw.Widget fila(String label, String valor) {
       return pw.Padding(
-        padding: const pw.EdgeInsets.only(bottom: 4),
+        padding: const pw.EdgeInsets.only(bottom: 3.5),
         child: pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.end,
           children: [
             pw.SizedBox(
-              width: 55,
+              width: 50,
               child: pw.Text(label,
                   style: pw.TextStyle(
-                      fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+                      fontSize: 8, fontWeight: pw.FontWeight.bold)),
             ),
             pw.Expanded(
               child: label == 'Firma:'
                   ? pw.Container(
-                      height: 12,
+                      height: 10,
                       decoration: pw.BoxDecoration(
                         border: pw.Border(
                           bottom: pw.BorderSide(
-                              color: PdfColor.fromHex('#333333'), width: 0.7),
+                              color: PdfColor.fromHex('#333333'), width: 0.6),
                         ),
                       ),
                     )
                   : pw.Text(
                       valor,
-                      style: const pw.TextStyle(fontSize: 8.5),
+                      style: const pw.TextStyle(fontSize: 8),
                     ),
             ),
           ],
@@ -435,9 +462,9 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
 
     return pw.Container(
       width: double.infinity,
-      padding: const pw.EdgeInsets.all(10),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: headerColor, width: 0.8),
+        border: pw.Border.all(color: borderColor, width: 0.8),
         borderRadius: pw.BorderRadius.circular(8),
       ),
       child: pw.Column(
@@ -480,9 +507,24 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
-            onPressed: _abrirFormularioCompletar,
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.white.withOpacity(0.15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              icon: const Icon(Icons.tune, size: 18),
+              label: const Text(
+                'Ajustar Datos',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              onPressed: _abrirFormularioCompletar,
+            ),
           ),
         ],
       ),
