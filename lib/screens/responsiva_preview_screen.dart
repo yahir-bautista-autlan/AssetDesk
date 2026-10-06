@@ -75,6 +75,10 @@ class ResponsivaPreviewScreen extends StatefulWidget {
 }
 
 class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
+  static final PdfColor _azulBorde = PdfColor.fromHex('#1A3C6E');
+  static final PdfColor _azulTitulo = PdfColor.fromHex('#1565C0');
+  static final PdfColor _fondoClaro = PdfColor.fromHex('#DCE8F5');
+
   late ResponsivaExtraData _datos;
   bool _cargandoInicial = true;
 
@@ -185,6 +189,29 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     }
   }
 
+  List<int> get _flexCols => const [2, 2, 3, 3];
+
+  pw.Widget _filaTabla(List<String> valores, {bool negrita = false}) {
+    return pw.Row(
+      children: List.generate(valores.length, (i) {
+        return pw.Expanded(
+          flex: _flexCols[i],
+          child: pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: pw.Text(
+              valores[i],
+              style: pw.TextStyle(
+                fontSize: 8.5,
+                fontWeight:
+                    negrita ? pw.FontWeight.bold : pw.FontWeight.normal,
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
   Future<Uint8List> _generarPdf(PdfPageFormat format) async {
     pw.MemoryImage? logo;
     try {
@@ -225,7 +252,6 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     }
 
     final pdf = pw.Document();
-    final headerColor = PdfColor.fromHex('#532E7C');
 
     pdf.addPage(
       pw.Page(
@@ -243,118 +269,117 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
               pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Center(
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.center,
-                      children: [
-                        if (logo != null)
-                          pw.Container(
-                            width: 60,
-                            height: 60,
-                            margin: const pw.EdgeInsets.only(bottom: 4),
-                            child: pw.Image(logo),
-                          ),
-                        pw.Text(
-                          nombreEmpresa,
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            fontSize: 16,
-                            fontWeight: pw.FontWeight.bold,
-                            color: headerColor,
-                          ),
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      if (logo != null)
+                        pw.Container(
+                          width: 64,
+                          height: 64,
+                          child: pw.Image(logo),
                         ),
-                        pw.SizedBox(height: 2),
-                        pw.Text(
-                          'HOJA RESPONSIVA DE EQUIPO',
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            fontSize: 10,
-                            fontWeight: pw.FontWeight.bold,
+                      pw.SizedBox(width: 14),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            nombreEmpresa,
+                            style: pw.TextStyle(
+                              fontSize: 17,
+                              fontWeight: pw.FontWeight.bold,
+                              color: _azulTitulo,
+                            ),
+                          ),
+                          pw.SizedBox(height: 3),
+                          pw.Text(
+                            'HOJA RESPONSIVA DE EQUIPO',
+                            style: pw.TextStyle(
+                              fontSize: 10,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 20),
+                  pw.Text(
+                    'Descripción del equipo:',
+                    style: pw.TextStyle(
+                      fontSize: 11,
+                      fontWeight: pw.FontWeight.bold,
+                      color: _azulBorde,
+                    ),
+                  ),
+                  pw.SizedBox(height: 6),
+                  pw.Container(
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(color: _azulBorde, width: 1),
+                      borderRadius: pw.BorderRadius.circular(10),
+                    ),
+                    padding: const pw.EdgeInsets.all(6),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        _filaTabla(['Equipo', 'Marca', 'Modelo', 'Serie'],
+                            negrita: true),
+                        pw.Container(
+                          height: 1,
+                          color: _azulBorde,
+                          margin:
+                              const pw.EdgeInsets.symmetric(vertical: 2),
+                        ),
+                        for (var i = 0; i < filasTabla.length; i++)
+                          pw.Container(
+                            color: _fondoClaro,
+                            margin: pw.EdgeInsets.only(top: i == 0 ? 0 : 4),
+                            child: _filaTabla(filasTabla[i]),
+                          ),
+                        pw.SizedBox(height: 14),
+                        pw.Container(
+                          width: double.infinity,
+                          color: _fondoClaro,
+                          padding: const pw.EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 7),
+                          child: pw.Text(
+                            _datos.otrosSoftware.isEmpty
+                                ? 'Otros:'
+                                : 'Otros: ${_datos.otrosSoftware}',
+                            style: pw.TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  pw.SizedBox(height: 16),
-                  pw.Text(
-                    'Descripción del equipo:',
-                    style: pw.TextStyle(
-                        fontSize: 10, fontWeight: pw.FontWeight.bold),
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Table(
-                    border: pw.TableBorder.all(color: headerColor, width: 0.7),
-                    columnWidths: const {
-                      0: pw.FlexColumnWidth(2),
-                      1: pw.FlexColumnWidth(2),
-                      2: pw.FlexColumnWidth(2.8),
-                      3: pw.FlexColumnWidth(2.4),
-                    },
-                    children: [
-                      pw.TableRow(
-                        decoration: pw.BoxDecoration(
-                            color: PdfColor.fromHex('#EFE8F6')),
-                        children: [
-                          _celdaTabla('Equipo', negrita: true),
-                          _celdaTabla('Marca', negrita: true),
-                          _celdaTabla('Modelo', negrita: true),
-                          _celdaTabla('Serie', negrita: true),
-                        ],
-                      ),
-                      for (final fila in filasTabla)
-                        pw.TableRow(children: [
-                          _celdaTabla(fila[0]),
-                          _celdaTabla(fila[1]),
-                          _celdaTabla(fila[2]),
-                          _celdaTabla(fila[3]),
-                        ]),
-                    ],
-                  ),
-                  if (_datos.otrosSoftware.isNotEmpty) ...[
-                    pw.Container(
-                      width: double.infinity,
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border(
-                          left: pw.BorderSide(color: headerColor, width: 0.7),
-                          right: pw.BorderSide(color: headerColor, width: 0.7),
-                          bottom: pw.BorderSide(color: headerColor, width: 0.7),
-                        ),
-                      ),
-                      padding: const pw.EdgeInsets.all(5),
-                      child: pw.Text(
-                        'Otros: ${_datos.otrosSoftware}',
-                        style: pw.TextStyle(
-                            fontSize: 8.5, fontWeight: pw.FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                  pw.SizedBox(height: 14),
+                  pw.SizedBox(height: 18),
                   pw.Text('Responsable de TI:',
                       style: pw.TextStyle(
                           fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 4),
+                  pw.SizedBox(height: 5),
                   _cajaDatos(
-                    headerColor: headerColor,
                     nombre: _datos.nombreResponsableTI,
                     empresa: _datos.empresaResponsableTI,
                     correo: _datos.correoResponsableTI,
                   ),
-                  pw.SizedBox(height: 12),
+                  pw.SizedBox(height: 14),
                   pw.Text('Datos de quien Recibe el Equipo:',
                       style: pw.TextStyle(
                           fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 4),
+                  pw.SizedBox(height: 5),
                   _cajaDatos(
-                    headerColor: headerColor,
                     nombre: _datos.nombreRecibe,
                     empresa: _datos.empresaRecibe,
                     correo: _datos.correoRecibe,
                   ),
-                  pw.SizedBox(height: 14),
+                  pw.SizedBox(height: 16),
                   pw.Text(
                     'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
                     'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
                     'presentar y/o a devolver en el momento en que me sea requerido.',
+                    textAlign: pw.TextAlign.justify,
                     style: const pw.TextStyle(fontSize: 8, height: 1.3),
                   ),
                   pw.Spacer(),
@@ -363,7 +388,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text(
-                        'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73980',
+                        'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73960',
                         style: const pw.TextStyle(fontSize: 6.5),
                       ),
                       pw.Text('F-FSIS-AXO/Rev.02',
@@ -381,51 +406,44 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     return pdf.save();
   }
 
-  pw.Widget _celdaTabla(String texto, {bool negrita = false}) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.all(4.5),
-      child: pw.Text(
-        texto,
-        style: pw.TextStyle(
-          fontSize: 8.5,
-          fontWeight: negrita ? pw.FontWeight.bold : pw.FontWeight.normal,
-        ),
-      ),
-    );
-  }
-
   pw.Widget _cajaDatos({
-    required PdfColor headerColor,
     required String nombre,
     required String empresa,
     required String correo,
   }) {
     pw.Widget fila(String label, String valor) {
+      final esFirma = label == 'Firma:';
+      final tieneValor = valor.isNotEmpty && !esFirma;
+
       return pw.Padding(
-        padding: const pw.EdgeInsets.only(bottom: 4),
+        padding: const pw.EdgeInsets.only(bottom: 8),
         child: pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.end,
           children: [
             pw.SizedBox(
-              width: 55,
+              width: 58,
               child: pw.Text(label,
                   style: pw.TextStyle(
                       fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
             ),
+            pw.SizedBox(width: 8),
             pw.Expanded(
-              child: label == 'Firma:'
-                  ? pw.Container(
-                      height: 12,
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border(
-                          bottom: pw.BorderSide(
-                              color: PdfColor.fromHex('#333333'), width: 0.7),
-                        ),
+              child: tieneValor
+                  ? pw.Text(
+                      valor,
+                      style: pw.TextStyle(
+                        fontSize: 8.5,
+                        decoration: pw.TextDecoration.underline,
                       ),
                     )
-                  : pw.Text(
-                      valor,
-                      style: const pw.TextStyle(fontSize: 8.5),
+                  : pw.Container(
+                      height: 10,
+                      decoration: const pw.BoxDecoration(
+                        border: pw.Border(
+                          bottom: pw.BorderSide(
+                              color: PdfColors.black, width: 0.6),
+                        ),
+                      ),
                     ),
             ),
           ],
@@ -437,8 +455,8 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
       width: double.infinity,
       padding: const pw.EdgeInsets.all(10),
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: headerColor, width: 0.8),
-        borderRadius: pw.BorderRadius.circular(8),
+        border: pw.Border.all(color: _azulBorde, width: 1),
+        borderRadius: pw.BorderRadius.circular(10),
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
