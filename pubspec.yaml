@@ -36,7 +36,6 @@ flutter:
   assets:
     - assets/logo_autlan.png
     - assets/images/warehouse_icon.png
-    - assets/plantilla_responsiva.png
 
 flutter_launcher_icons:
   android: true

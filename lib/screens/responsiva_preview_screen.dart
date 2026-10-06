@@ -10,7 +10,7 @@ import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
 
 class ResponsivaExtraData {
-  String marcaEquipo;
+  String marcaEquipoManual;
   bool incluyeCargador;
   String marcaCargador;
   String serieCargador;
@@ -25,7 +25,7 @@ class ResponsivaExtraData {
   String correoRecibe;
 
   ResponsivaExtraData({
-    this.marcaEquipo = '',
+    this.marcaEquipoManual = '',
     this.incluyeCargador = false,
     this.marcaCargador = '',
     this.serieCargador = '',
@@ -41,7 +41,7 @@ class ResponsivaExtraData {
   });
 
   ResponsivaExtraData copy() => ResponsivaExtraData(
-        marcaEquipo: marcaEquipo,
+        marcaEquipoManual: marcaEquipoManual,
         incluyeCargador: incluyeCargador,
         marcaCargador: marcaCargador,
         serieCargador: serieCargador,
@@ -75,7 +75,6 @@ class ResponsivaPreviewScreen extends StatefulWidget {
 }
 
 class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
-
   late ResponsivaExtraData _datos;
   bool _cargandoInicial = true;
 
@@ -109,6 +108,21 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
       default:
         return 'Numero de Serie';
     }
+  }
+
+  (String marca, String modelo) _separarMarcaModelo() {
+    final modeloCompleto = _valor('Modelo');
+    if (_datos.marcaEquipoManual.isNotEmpty) {
+      return (_datos.marcaEquipoManual, modeloCompleto);
+    }
+    if (modeloCompleto.isEmpty) return ('', '');
+
+    final partes = modeloCompleto.split(RegExp(r'\s+'));
+    if (partes.length <= 1) return ('', modeloCompleto);
+
+    final marca = partes.first;
+    final resto = partes.sublist(1).join(' ');
+    return (marca, resto);
   }
 
   String _correoDesdeUsuario(String usuario) {
@@ -186,8 +200,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     final serieEquipo = _valor(snKey);
     final tipoEquipo =
         _valor('Equipo').isNotEmpty ? _valor('Equipo') : 'Equipo';
-    final modeloEquipo = _valor('Modelo');
-    final marcaEquipo = _datos.marcaEquipo;
+    final (marcaEquipo, modeloEquipo) = _separarMarcaModelo();
 
     final nombreEmpresa = _nombreEncabezado();
     final fechaStr =
@@ -223,34 +236,41 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
         pageFormat: PdfPageFormat.letter,
         margin: const pw.EdgeInsets.fromLTRB(36, 32, 36, 24),
         build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+          return pw.Stack(
             children: [
-              pw.Row(
+              pw.Positioned(
+                top: 0,
+                right: 0,
+                child: pw.Text('Fecha: $fechaStr',
+                    style: const pw.TextStyle(fontSize: 9)),
+              ),
+              pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  if (logo != null)
-                    pw.Container(
-                      width: 56,
-                      height: 56,
-                      margin: const pw.EdgeInsets.only(right: 12),
-                      child: pw.Image(logo),
-                    ),
-                  pw.Expanded(
+                  pw.Center(
                     child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
+                        if (logo != null)
+                          pw.Container(
+                            width: 72,
+                            height: 72,
+                            margin: const pw.EdgeInsets.only(bottom: 6),
+                            child: pw.Image(logo),
+                          ),
                         pw.Text(
                           nombreEmpresa,
+                          textAlign: pw.TextAlign.center,
                           style: pw.TextStyle(
-                            fontSize: 16,
+                            fontSize: 18,
                             fontWeight: pw.FontWeight.bold,
                             color: headerColor,
                           ),
                         ),
-                        pw.SizedBox(height: 2),
+                        pw.SizedBox(height: 3),
                         pw.Text(
                           'HOJA RESPONSIVA DE EQUIPO',
+                          textAlign: pw.TextAlign.center,
                           style: pw.TextStyle(
                             fontSize: 11,
                             fontWeight: pw.FontWeight.bold,
@@ -259,98 +279,102 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                       ],
                     ),
                   ),
-                  pw.Text('Fecha: $fechaStr',
-                      style: const pw.TextStyle(fontSize: 9)),
-                ],
-              ),
-              pw.SizedBox(height: 18),
-              pw.Text(
-                'Descripción del equipo:',
-                style: pw.TextStyle(
-                    fontSize: 11, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.SizedBox(height: 6),
-              pw.Table(
-                border: pw.TableBorder.all(color: headerColor, width: 0.7),
-                columnWidths: const {
-                  0: pw.FlexColumnWidth(2),
-                  1: pw.FlexColumnWidth(2),
-                  2: pw.FlexColumnWidth(2.4),
-                  3: pw.FlexColumnWidth(2.4),
-                },
-                children: [
-                  pw.TableRow(
-                    decoration:
-                        pw.BoxDecoration(color: PdfColor.fromHex('#EFE8F6')),
+                  pw.SizedBox(height: 22),
+                  pw.Text(
+                    'Descripción del equipo:',
+                    style: pw.TextStyle(
+                        fontSize: 11, fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.SizedBox(height: 6),
+                  pw.Table(
+                    border: pw.TableBorder.all(color: headerColor, width: 0.7),
+                    columnWidths: const {
+                      0: pw.FlexColumnWidth(2),
+                      1: pw.FlexColumnWidth(2),
+                      2: pw.FlexColumnWidth(2.4),
+                      3: pw.FlexColumnWidth(2.4),
+                    },
                     children: [
-                      _celdaTabla('Equipo', negrita: true),
-                      _celdaTabla('Marca', negrita: true),
-                      _celdaTabla('Modelo', negrita: true),
-                      _celdaTabla('Serie', negrita: true),
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(
+                            color: PdfColor.fromHex('#EFE8F6')),
+                        children: [
+                          _celdaTabla('Equipo', negrita: true),
+                          _celdaTabla('Marca', negrita: true),
+                          _celdaTabla('Modelo', negrita: true),
+                          _celdaTabla('Serie', negrita: true),
+                        ],
+                      ),
+                      for (final fila in filasTabla)
+                        pw.TableRow(children: [
+                          _celdaTabla(fila[0]),
+                          _celdaTabla(fila[1]),
+                          _celdaTabla(fila[2]),
+                          _celdaTabla(fila[3]),
+                        ]),
                     ],
                   ),
-                  for (final fila in filasTabla)
-                    pw.TableRow(children: [
-                      _celdaTabla(fila[0]),
-                      _celdaTabla(fila[1]),
-                      _celdaTabla(fila[2]),
-                      _celdaTabla(fila[3]),
-                    ]),
-                  if (_datos.otrosSoftware.isNotEmpty)
-                    pw.TableRow(children: [
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(5),
-                        child: pw.Text('Otros: ${_datos.otrosSoftware}',
-                            style: pw.TextStyle(
-                                fontSize: 9,
-                                fontWeight: pw.FontWeight.bold)),
+                  if (_datos.otrosSoftware.isNotEmpty) ...[
+                    pw.Container(
+                      width: double.infinity,
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border(
+                          left: pw.BorderSide(color: headerColor, width: 0.7),
+                          right: pw.BorderSide(color: headerColor, width: 0.7),
+                          bottom:
+                              pw.BorderSide(color: headerColor, width: 0.7),
+                        ),
                       ),
-                      pw.Container(),
-                      pw.Container(),
-                      pw.Container(),
-                    ]),
-                ],
-              ),
-              pw.SizedBox(height: 20),
-              pw.Text('Responsable de TI:',
-                  style: pw.TextStyle(
-                      fontSize: 11, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 6),
-              _cajaDatos(
-                headerColor: headerColor,
-                nombre: _datos.nombreResponsableTI,
-                empresa: _datos.empresaResponsableTI,
-                correo: _datos.correoResponsableTI,
-              ),
-              pw.SizedBox(height: 16),
-              pw.Text('Datos de quien Recibe el Equipo:',
-                  style: pw.TextStyle(
-                      fontSize: 11, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 6),
-              _cajaDatos(
-                headerColor: headerColor,
-                nombre: _datos.nombreRecibe,
-                empresa: _datos.empresaRecibe,
-                correo: _datos.correoRecibe,
-              ),
-              pw.SizedBox(height: 20),
-              pw.Text(
-                'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
-                'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
-                'presentar y/o a devolver en el momento en que me sea requerido.',
-                style: const pw.TextStyle(fontSize: 8.5),
-              ),
-              pw.Spacer(),
-              pw.Divider(color: PdfColor.fromHex('#CCCCCC')),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73960',
-                    style: const pw.TextStyle(fontSize: 7),
+                      padding: const pw.EdgeInsets.all(5),
+                      child: pw.Text(
+                        'Otros: ${_datos.otrosSoftware}',
+                        style: pw.TextStyle(
+                            fontSize: 9, fontWeight: pw.FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                  pw.SizedBox(height: 20),
+                  pw.Text('Responsable de TI:',
+                      style: pw.TextStyle(
+                          fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: 6),
+                  _cajaDatos(
+                    headerColor: headerColor,
+                    nombre: _datos.nombreResponsableTI,
+                    empresa: _datos.empresaResponsableTI,
+                    correo: _datos.correoResponsableTI,
                   ),
-                  pw.Text('F-FSIS-AXO/Rev.02',
-                      style: const pw.TextStyle(fontSize: 7)),
+                  pw.SizedBox(height: 16),
+                  pw.Text('Datos de quien Recibe el Equipo:',
+                      style: pw.TextStyle(
+                          fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                  pw.SizedBox(height: 6),
+                  _cajaDatos(
+                    headerColor: headerColor,
+                    nombre: _datos.nombreRecibe,
+                    empresa: _datos.empresaRecibe,
+                    correo: _datos.correoRecibe,
+                  ),
+                  pw.SizedBox(height: 20),
+                  pw.Text(
+                    'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
+                    'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
+                    'presentar y/o a devolver en el momento en que me sea requerido.',
+                    style: const pw.TextStyle(fontSize: 8.5),
+                  ),
+                  pw.Spacer(),
+                  pw.Divider(color: PdfColor.fromHex('#CCCCCC')),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73960',
+                        style: const pw.TextStyle(fontSize: 7),
+                      ),
+                      pw.Text('F-FSIS-AXO/Rev.02',
+                          style: const pw.TextStyle(fontSize: 7)),
+                    ],
+                  ),
                 ],
               ),
             ],
@@ -497,7 +521,7 @@ class _CompletarDatosResponsivaScreenState
     extends State<_CompletarDatosResponsivaScreen> {
   static const primaryPurple = Color(0xFF532E7C);
 
-  late final TextEditingController _marcaEquipo;
+  late final TextEditingController _marcaEquipoManual;
   late bool _incluyeCargador;
   late final TextEditingController _marcaCargador;
   late final TextEditingController _serieCargador;
@@ -515,7 +539,7 @@ class _CompletarDatosResponsivaScreenState
   void initState() {
     super.initState();
     final d = widget.datosIniciales;
-    _marcaEquipo = TextEditingController(text: d.marcaEquipo);
+    _marcaEquipoManual = TextEditingController(text: d.marcaEquipoManual);
     _incluyeCargador = d.incluyeCargador;
     _marcaCargador = TextEditingController(text: d.marcaCargador);
     _serieCargador = TextEditingController(text: d.serieCargador);
@@ -532,7 +556,7 @@ class _CompletarDatosResponsivaScreenState
 
   @override
   void dispose() {
-    _marcaEquipo.dispose();
+    _marcaEquipoManual.dispose();
     _marcaCargador.dispose();
     _serieCargador.dispose();
     _marcaMonitor.dispose();
@@ -548,7 +572,7 @@ class _CompletarDatosResponsivaScreenState
 
   void _guardar() {
     final resultado = ResponsivaExtraData(
-      marcaEquipo: _marcaEquipo.text.trim(),
+      marcaEquipoManual: _marcaEquipoManual.text.trim(),
       incluyeCargador: _incluyeCargador,
       marcaCargador: _marcaCargador.text.trim(),
       serieCargador: _serieCargador.text.trim(),
@@ -639,8 +663,11 @@ class _CompletarDatosResponsivaScreenState
                   children: [
                     _tituloSeccion('Equipo principal'),
                     TextField(
-                        controller: _marcaEquipo,
-                        decoration: _decoracion('Marca', hint: 'Ej. Lenovo')),
+                      controller: _marcaEquipoManual,
+                      decoration: _decoracion('Marca (opcional)',
+                          hint:
+                              'Se detecta automáticamente del Modelo si se deja vacío'),
+                    ),
                     const SizedBox(height: 16),
                     _tituloSeccion('Accesorios'),
                     CheckboxListTile(
