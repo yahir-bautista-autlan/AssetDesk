@@ -1,279 +1,193 @@
 import 'dart:convert';
-import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/inventory_model.dart';
 import '../models/user_model.dart';
+import '../models/inventory_model.dart';
 
 class AuthService {
-  static const String scriptUrl =
-      'https://script.google.com/macros/s/AKfycbxdDGzCjqaXJuwaH76yiVPGjmeo5alpU1hG5PtAuCxw-yRGQmu8GYkP-e-rSWf5P0tY/exec';
-
+  static const String apiUrl = 'TU_URL_DE_LA_API_AQUI'; 
+  
+  static UserModel? _usuarioActual;
   static String ultimoError = '';
 
-  static String hashPassword(String password) {
-    final bytes = utf8.encode(password.trim());
-    final digest = sha256.convert(bytes);
-    return digest.toString().toLowerCase();
-  }
-
-  static Future<Map<String, dynamic>?> _post(Map<String, dynamic> body) async {
-    ultimoError = '';
-    try {
-      var response = await http.post(
-        Uri.parse(scriptUrl),
-        headers: {'Content-Type': 'text/plain;charset=utf-8'},
-        body: jsonEncode(body),
+  static Future<UserModel?> obtenerUsuarioActual() async {
+    if (_usuarioActual != null) return _usuarioActual;
+    
+    final prefs = await SharedPreferences.getInstance();
+    final userData = prefs.getString('user_session');
+    
+    if (userData != null) {
+      final datos = await obtenerDatosCompletos();
+      final correoGuardado = jsonDecode(userData)['correo'];
+      
+      final usuariosList = datos['usuarios'] as List<Map<String, dynamic>>;
+      final catalogo = datos['inventarios'] as List<InventoryModel>;
+      
+      final userMap = usuariosList.firstWhere(
+        (u) => u['CORREO'] == correoGuardado || u['correo'] == correoGuardado, 
+        orElse: () => {}
       );
 
-      int redirectCount = 0;
-      while ((response.statusCode == 301 ||
-              response.statusCode == 302 ||
-              response.statusCode == 303 ||
-              response.statusCode == 307 ||
-              response.statusCode == 308) &&
-          redirectCount < 5) {
-        final location = response.headers['location'];
-        if (location == null || location.isEmpty) break;
-
-        response = await http.get(Uri.parse(location));
-        redirectCount++;
+      if (userMap.isNotEmpty) {
+        _usuarioActual = UserModel.fromJson(userMap, catalogo);
+        return _usuarioActual;
       }
-
-      final preview = response.body.length > 150
-          ? response.body.substring(0, 150)
-          : response.body;
-
-      if (response.statusCode == 200) {
-        try {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          if (data['status'] != 'success') {
-            ultimoError = (data['message'] ?? 'Error desconocido').toString();
-          }
-          return data;
-        } catch (_) {
-          ultimoError =
-              'Status ${response.statusCode} | Bytes: ${response.bodyBytes.length} | Body: "$preview"';
-          return null;
-        }
-      }
-
-      ultimoError =
-          'Status ${response.statusCode} | Bytes: ${response.bodyBytes.length} | Body: "$preview"';
-      return null;
-    } catch (e) {
-      ultimoError = 'Error de conexión: $e';
-      return null;
-    }
-  }
-
-  static Future<UserModel?> login(String correo, String password) async {
-    final data = await _post({
-      'action': 'login',
-      'correo': correo.trim().toLowerCase(),
-      'passwordHash': hashPassword(password),
-    });
-
-    if (data != null && data['status'] == 'success' && data['usuario'] != null) {
-      final user = UserModel.fromJson(data['usuario']);
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user_data', jsonEncode(data['usuario']));
-      } catch (_) {}
-      return user;
     }
     return null;
+  }
+
+  static Future<bool> login(String correo, String password) async {
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'action': 'login',
+          'correo': correo,
+          'password': password,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final res = jsonDecode(response.body);
+        if (res['success'] == true) {
+          final datos = await obtenerDatosCompletos();
+          final catalogo = datos['inventarios'] as List<InventoryModel>;
+          
+          _usuarioActual = UserModel.fromJson(res['usuario'], catalogo);
+          
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_session', jsonEncode({'correo': correo}));
+          
+          ultimoError = '';
+          return true;
+        } else {
+          ultimoError = res['message'] ?? 'Credenciales incorrectas';
+          return false;
+        }
+      }
+      ultimoError = 'Error de servidor: ${response.statusCode}';
+      return false;
+    } catch (e) {
+      ultimoError = 'Error de conexión: $e';
+      return false;
+    }
   }
 
   static Future<void> logout() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-    } catch (_) {}
-  }
-
-  static Future<UserModel?> obtenerUsuarioActual() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userString = prefs.getString('user_data');
-      if (userString != null && userString.isNotEmpty) {
-        return UserModel.fromJson(jsonDecode(userString));
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  static Future<bool> registrarUsuario({
-    required String nombre,
-    required String correo,
-    required String password,
-    required String puesto,
-    required List<String> inventarios,
-  }) async {
-    final data = await _post({
-      'action': 'registrar',
-      'nombre': nombre.trim(),
-      'correo': correo.trim().toLowerCase(),
-      'passwordHash': hashPassword(password),
-      'puesto': puesto.trim(),
-      'inventarios': inventarios.join(','),
-    });
-    return data != null && data['status'] == 'success';
-  }
-
-  static Future<bool> actualizarUsuarioAdmin({
-    required String correo,
-    required String nombre,
-    required String puesto,
-    required List<String> inventarios,
-  }) async {
-    final data = await _post({
-      'action': 'actualizarUsuarioAdmin',
-      'nombre': nombre.trim(),
-      'correo': correo.trim().toLowerCase(),
-      'puesto': puesto.trim(),
-      'inventarios': inventarios.join(','),
-    });
-    return data != null && data['status'] == 'success';
-  }
-
-  static Future<Map<String, dynamic>> cambiarMiPassword({
-    required String correo,
-    required String actualPassword,
-    required String nuevaPassword,
-  }) async {
-    final data = await _post({
-      'action': 'cambiarMiPassword',
-      'correo': correo.trim().toLowerCase(),
-      'actualPasswordHash': hashPassword(actualPassword),
-      'nuevaPasswordHash': hashPassword(nuevaPassword),
-    });
-
-    if (data == null) {
-      return {'exito': false, 'mensaje': 'Error de conexión con el servidor'};
-    }
-    return {
-      'exito': data['status'] == 'success',
-      'mensaje': data['message'] ?? 'Error desconocido',
-    };
-  }
-
-  static Future<bool> eliminarUsuario(String correo) async {
-    final data = await _post({
-      'action': 'eliminar',
-      'correo': correo.trim().toLowerCase(),
-    });
-    return data != null && data['status'] == 'success';
+    _usuarioActual = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('user_session');
   }
 
   static Future<Map<String, dynamic>> obtenerDatosCompletos() async {
-    final data = await _post({'action': 'obtenerTodo'});
-    if (data != null && data['status'] == 'success') {
-      final usuarios = List<Map<String, dynamic>>.from(data['usuarios'] ?? []);
-      final inventarios = (data['inventarios'] as List? ?? [])
-          .map((e) => InventoryModel.fromJson(e))
-          .toList();
-      return {'usuarios': usuarios, 'inventarios': inventarios};
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'action': 'getAll'}),
+      );
+
+      if (response.statusCode == 200) {
+        final res = jsonDecode(response.body);
+        if (res['success'] == true) {
+          final List<dynamic> rawInventarios = res['inventarios'] ?? [];
+          final catalogo = rawInventarios.map((e) => InventoryModel.fromJson(e)).toList();
+          
+          return {
+            'usuarios': List<Map<String, dynamic>>.from(res['usuarios'] ?? []),
+            'inventarios': catalogo,
+          };
+        }
+      }
+      throw Exception('Fallo al obtener datos');
+    } catch (e) {
+      throw Exception('Error de red: $e');
     }
-    return {'usuarios': <Map<String, dynamic>>[], 'inventarios': <InventoryModel>[]};
   }
 
-  static Future<List<Map<String, dynamic>>> obtenerUsuarios() async {
-    final resultado = await obtenerDatosCompletos();
-    return resultado['usuarios'] as List<Map<String, dynamic>>;
-  }
-
-  static Future<List<InventoryModel>> obtenerInventarios() async {
-    final resultado = await obtenerDatosCompletos();
-    return resultado['inventarios'] as List<InventoryModel>;
-  }
-
-  static Future<Map<String, dynamic>> obtenerDatosInventario(String spreadsheetIdOrUrl) async {
-    final data = await _post({
-      'action': 'obtenerDatosInventario',
-      'spreadsheetId': spreadsheetIdOrUrl,
-    });
-    if (data != null && data['status'] == 'success' && data['pestañas'] != null) {
-      return Map<String, dynamic>.from(data['pestañas']);
+  static Future<bool> registrarUsuario({
+    required String nombre, required String correo, 
+    required String password, required String puesto, 
+    required List<String> inventarios
+  }) async {
+    try {
+      final response = await _postAction({
+        'action': 'createUser',
+        'nombre': nombre,
+        'correo': correo,
+        'password': password,
+        'puesto': puesto,
+        'inventarios': inventarios.join(','),
+      });
+      return response['success'] == true;
+    } catch (e) {
+      return false;
     }
-    return {};
   }
 
-  static Future<Map<String, dynamic>> obtenerHojaBajas(
-      String spreadsheetIdOrUrl, String pestana) async {
-    final data = await _post({
-      'action': 'obtenerHojaBajas',
-      'spreadsheetId': spreadsheetIdOrUrl,
-      'pestana': pestana,
-    });
-    if (data != null && data['status'] == 'success' && data['data'] != null) {
-      return Map<String, dynamic>.from(data['data']);
+  static Future<bool> actualizarUsuarioAdmin({
+    required String correo, required String nombre,
+    required String puesto, required List<String> inventarios
+  }) async {
+    try {
+      final response = await _postAction({
+        'action': 'updateUser',
+        'correo': correo,
+        'nombre': nombre,
+        'puesto': puesto,
+        'inventarios': inventarios.join(','),
+      });
+      return response['success'] == true;
+    } catch (e) {
+      return false;
     }
-    return {'headers': <String>[], 'rows': <dynamic>[]};
+  }
+
+  static Future<bool> eliminarUsuario(String correo) async {
+    try {
+      final response = await _postAction({
+        'action': 'deleteUser',
+        'correo': correo,
+      });
+      return response['success'] == true;
+    } catch (e) {
+      return false;
+    }
   }
 
   static Future<InventoryModel?> crearInventario({
-    required String nombre,
-    required String spreadsheet,
-    required String ubicacion,
+    required String nombre, required String spreadsheet, required String ubicacion
   }) async {
-    final data = await _post({
-      'action': 'crearInventario',
-      'nombre': nombre.trim(),
-      'spreadsheet': spreadsheet.trim(),
-      'ubicacion': ubicacion.trim(),
-    });
-    if (data != null &&
-        data['status'] == 'success' &&
-        data['inventario'] != null) {
-      return InventoryModel.fromJson(data['inventario']);
+    try {
+      final response = await _postAction({
+        'action': 'createInventory',
+        'nombre': nombre,
+        'spreadsheet': spreadsheet,
+        'ubicacion': ubicacion,
+      });
+      if (response['success'] == true) {
+        return InventoryModel.fromJson(response['inventario']);
+      }
+      return null;
+    } catch (e) {
+      return null;
     }
-    return null;
   }
 
-  static Future<bool> darDeBaja({
-    required String spreadsheetId,
-    required String pestana,
-    required String sn,
-    required String motivo,
-  }) async {
-    final data = await _post({
-      'action': 'darDeBaja',
-      'spreadsheetId': spreadsheetId,
-      'pestana': pestana,
-      'sn': sn,
-      'motivo': motivo,
-    });
-    return data != null && data['status'] == 'success';
-  }
-
-  static Future<bool> agregarActivo({
-    required String spreadsheetId,
-    required String pestana,
-    required Map<String, String> datos,
-  }) async {
-    final data = await _post({
-      'action': 'agregarActivo',
-      'spreadsheetId': spreadsheetId,
-      'pestana': pestana,
-      'datos': datos,
-    });
-    return data != null && data['status'] == 'success';
-  }
-
-  static Future<bool> editarActivo({
-    required String spreadsheetId,
-    required String pestana,
-    required String snOriginal,
-    required Map<String, String> datos,
-  }) async {
-    final data = await _post({
-      'action': 'editarActivo',
-      'spreadsheetId': spreadsheetId,
-      'pestana': pestana,
-      'snOriginal': snOriginal,
-      'datos': datos,
-    });
-    return data != null && data['status'] == 'success';
+  static Future<Map<String, dynamic>> _postAction(Map<String, dynamic> body) async {
+    final response = await http.post(
+      Uri.parse(apiUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode == 200) {
+      final res = jsonDecode(response.body);
+      ultimoError = res['message'] ?? '';
+      return res;
+    } else {
+      ultimoError = 'Error HTTP: ${response.statusCode}';
+      return {'success': false};
+    }
   }
 }
