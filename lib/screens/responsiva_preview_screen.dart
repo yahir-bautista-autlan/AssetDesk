@@ -75,10 +75,6 @@ class ResponsivaPreviewScreen extends StatefulWidget {
 }
 
 class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
-  static final PdfColor _azulBorde = PdfColor.fromHex('#1A3C6E');
-  static final PdfColor _azulTitulo = PdfColor.fromHex('#1565C0');
-  static final PdfColor _fondoClaro = PdfColor.fromHex('#DCE8F5');
-
   late ResponsivaExtraData _datos;
   bool _cargandoInicial = true;
 
@@ -189,29 +185,6 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     }
   }
 
-  List<int> get _flexCols => const [2, 2, 3, 3];
-
-  pw.Widget _filaTabla(List<String> valores, {bool negrita = false}) {
-    return pw.Row(
-      children: List.generate(valores.length, (i) {
-        return pw.Expanded(
-          flex: _flexCols[i],
-          child: pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: pw.Text(
-              valores[i],
-              style: pw.TextStyle(
-                fontSize: 8.5,
-                fontWeight:
-                    negrita ? pw.FontWeight.bold : pw.FontWeight.normal,
-              ),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
   Future<Uint8List> _generarPdf(PdfPageFormat format) async {
     pw.MemoryImage? logo;
     try {
@@ -252,148 +225,160 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     }
 
     final pdf = pw.Document();
+    
+    final azulOscuro = PdfColor.fromHex('#2F5597');
+    final fondoClaro = PdfColor.fromHex('#E6F0F9');
+    final colorCelesteTexto = PdfColor.fromHex('#5B9BD5');
 
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.letter,
-        margin: const pw.EdgeInsets.fromLTRB(36, 32, 36, 24),
+        margin: pw.EdgeInsets.fromLTRB(40, 40, 40, 30),
         build: (pw.Context context) {
-          return pw.Stack(
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Positioned(
-                top: 0,
-                right: 0,
-                child: pw.Text('Fecha: $fechaStr',
-                    style: const pw.TextStyle(fontSize: 9)),
-              ),
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
                 children: [
-                  pw.Row(
-                    crossAxisAlignment: pw.CrossAxisAlignment.center,
-                    children: [
-                      if (logo != null)
-                        pw.Container(
-                          width: 64,
-                          height: 64,
-                          child: pw.Image(logo),
-                        ),
-                      pw.SizedBox(width: 14),
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            nombreEmpresa,
-                            style: pw.TextStyle(
-                              fontSize: 17,
-                              fontWeight: pw.FontWeight.bold,
-                              color: _azulTitulo,
-                            ),
-                          ),
-                          pw.SizedBox(height: 3),
-                          pw.Text(
-                            'HOJA RESPONSIVA DE EQUIPO',
-                            style: pw.TextStyle(
-                              fontSize: 10,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 20),
-                  pw.Text(
-                    'Descripción del equipo:',
-                    style: pw.TextStyle(
-                      fontSize: 11,
-                      fontWeight: pw.FontWeight.bold,
-                      color: _azulBorde,
-                    ),
-                  ),
-                  pw.SizedBox(height: 6),
                   pw.Container(
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(color: _azulBorde, width: 1),
-                      borderRadius: pw.BorderRadius.circular(10),
-                    ),
-                    padding: const pw.EdgeInsets.all(6),
+                    width: 90,
+                    child: logo != null ? pw.Image(logo) : pw.SizedBox(),
+                  ),
+                  pw.Expanded(
                     child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
-                        _filaTabla(['Equipo', 'Marca', 'Modelo', 'Serie'],
-                            negrita: true),
-                        pw.Container(
-                          height: 1,
-                          color: _azulBorde,
-                          margin:
-                              const pw.EdgeInsets.symmetric(vertical: 2),
-                        ),
-                        for (var i = 0; i < filasTabla.length; i++)
-                          pw.Container(
-                            color: _fondoClaro,
-                            margin: pw.EdgeInsets.only(top: i == 0 ? 0 : 4),
-                            child: _filaTabla(filasTabla[i]),
+                        pw.Text(
+                          'HIDROELÉCTRICA $nombreEmpresa',
+                          style: pw.TextStyle(
+                            fontSize: 14,
+                            fontWeight: pw.FontWeight.bold,
+                            color: azulOscuro,
                           ),
-                        pw.SizedBox(height: 14),
-                        pw.Container(
-                          width: double.infinity,
-                          color: _fondoClaro,
-                          padding: const pw.EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 7),
-                          child: pw.Text(
-                            _datos.otrosSoftware.isEmpty
-                                ? 'Otros:'
-                                : 'Otros: ${_datos.otrosSoftware}',
-                            style: pw.TextStyle(
-                              fontSize: 8.5,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
+                        ),
+                        pw.SizedBox(height: 6),
+                        pw.Text(
+                          'HOJA RESPONSIVA DE EQUIPO',
+                          style: pw.TextStyle(
+                            fontSize: 11,
+                            fontWeight: pw.FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  pw.SizedBox(height: 18),
-                  pw.Text('Responsable de TI:',
-                      style: pw.TextStyle(
-                          fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 5),
-                  _cajaDatos(
-                    nombre: _datos.nombreResponsableTI,
-                    empresa: _datos.empresaResponsableTI,
-                    correo: _datos.correoResponsableTI,
+                  pw.Container(
+                    width: 90,
+                    alignment: pw.Alignment.bottomRight,
+                    padding: pw.EdgeInsets.only(top: 25),
+                    child: pw.Text(
+                      'Fecha: $fechaStr',
+                      style: pw.TextStyle(fontSize: 9),
+                    ),
                   ),
-                  pw.SizedBox(height: 14),
-                  pw.Text('Datos de quien Recibe el Equipo:',
-                      style: pw.TextStyle(
-                          fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 5),
-                  _cajaDatos(
-                    nombre: _datos.nombreRecibe,
-                    empresa: _datos.empresaRecibe,
-                    correo: _datos.correoRecibe,
-                  ),
-                  pw.SizedBox(height: 16),
-                  pw.Text(
-                    'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
-                    'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
-                    'presentar y/o a devolver en el momento en que me sea requerido.',
-                    textAlign: pw.TextAlign.justify,
-                    style: const pw.TextStyle(fontSize: 8, height: 1.3),
-                  ),
-                  pw.Spacer(),
-                  pw.Divider(color: PdfColor.fromHex('#CCCCCC'), thickness: 0.5),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text(
-                        'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73960',
-                        style: const pw.TextStyle(fontSize: 6.5),
+                ],
+              ),
+              pw.SizedBox(height: 25),
+              pw.Text(
+                'Descripción del equipo:',
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                  color: colorCelesteTexto,
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Container(
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: azulOscuro, width: 1.5),
+                  borderRadius: pw.BorderRadius.circular(12),
+                ),
+                padding: pw.EdgeInsets.all(3),
+                child: pw.Column(
+                  children: [
+                    pw.Padding(
+                      padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: pw.Row(
+                        children: [
+                          pw.Expanded(flex: 2, child: pw.Text('Equipo', style: pw.TextStyle(color: azulOscuro, fontWeight: pw.FontWeight.bold, fontSize: 10))),
+                          pw.Expanded(flex: 2, child: pw.Text('Marca', style: pw.TextStyle(color: azulOscuro, fontWeight: pw.FontWeight.bold, fontSize: 10))),
+                          pw.Expanded(flex: 3, child: pw.Text('Modelo', style: pw.TextStyle(color: azulOscuro, fontWeight: pw.FontWeight.bold, fontSize: 10))),
+                          pw.Expanded(flex: 2, child: pw.Text('Serie', style: pw.TextStyle(color: azulOscuro, fontWeight: pw.FontWeight.bold, fontSize: 10))),
+                        ],
                       ),
-                      pw.Text('F-FSIS-AXO/Rev.02',
-                          style: const pw.TextStyle(fontSize: 6.5)),
-                    ],
+                    ),
+                    pw.Container(height: 1, color: colorCelesteTexto),
+                    for (var fila in filasTabla)
+                      pw.Container(
+                        color: fondoClaro,
+                        margin: pw.EdgeInsets.only(bottom: 1),
+                        padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: pw.Row(
+                          children: [
+                            pw.Expanded(flex: 2, child: pw.Text(fila[0], style: pw.TextStyle(fontSize: 9.5))),
+                            pw.Expanded(flex: 2, child: pw.Text(fila[1], style: pw.TextStyle(fontSize: 9.5))),
+                            pw.Expanded(flex: 3, child: pw.Text(fila[2], style: pw.TextStyle(fontSize: 9.5))),
+                            pw.Expanded(flex: 2, child: pw.Text(fila[3], style: pw.TextStyle(fontSize: 9.5))),
+                          ],
+                        ),
+                      ),
+                    pw.Container(height: 1, color: colorCelesteTexto),
+                    pw.Container(
+                      width: double.infinity,
+                      color: fondoClaro,
+                      padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: pw.Text(
+                        _datos.otrosSoftware.isEmpty ? 'Otros:' : 'Otros: ${_datos.otrosSoftware}',
+                        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 25),
+              pw.Text(
+                'Responsable de TI:',
+                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 6),
+              _cajaFormulario(
+                borderColor: azulOscuro,
+                nombre: _datos.nombreResponsableTI,
+                empresa: _datos.empresaResponsableTI,
+                correo: _datos.correoResponsableTI,
+              ),
+              pw.SizedBox(height: 16),
+              pw.Text(
+                'Datos de quien Recibe el Equipo:',
+                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 6),
+              _cajaFormulario(
+                borderColor: azulOscuro,
+                nombre: _datos.nombreRecibe,
+                empresa: _datos.empresaRecibe,
+                correo: _datos.correoRecibe,
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text(
+                'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
+                'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
+                'presentar y/o a devolver en el momento en que me sea requerido.',
+                style: pw.TextStyle(fontSize: 8, height: 1.3),
+              ),
+              pw.Spacer(),
+              pw.Divider(color: PdfColors.grey400, thickness: 0.5),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73960',
+                    style: pw.TextStyle(fontSize: 7),
+                  ),
+                  pw.Text(
+                    'F-FSIS-AXO/Rev.02',
+                    style: pw.TextStyle(fontSize: 7),
                   ),
                 ],
               ),
@@ -406,46 +391,40 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     return pdf.save();
   }
 
-  pw.Widget _cajaDatos({
+  pw.Widget _cajaFormulario({
+    required PdfColor borderColor,
     required String nombre,
     required String empresa,
     required String correo,
   }) {
     pw.Widget fila(String label, String valor) {
-      final esFirma = label == 'Firma:';
-      final tieneValor = valor.isNotEmpty && !esFirma;
-
       return pw.Padding(
-        padding: const pw.EdgeInsets.only(bottom: 8),
+        padding: pw.EdgeInsets.only(bottom: 12),
         child: pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.end,
           children: [
             pw.SizedBox(
-              width: 58,
-              child: pw.Text(label,
-                  style: pw.TextStyle(
-                      fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+              width: 55,
+              child: pw.Text(
+                label,
+                style: pw.TextStyle(fontSize: 9.5),
+              ),
             ),
-            pw.SizedBox(width: 8),
             pw.Expanded(
-              child: tieneValor
-                  ? pw.Text(
-                      valor,
-                      style: pw.TextStyle(
-                        fontSize: 8.5,
-                        decoration: pw.TextDecoration.underline,
-                      ),
-                    )
-                  : pw.Container(
-                      height: 10,
-                      decoration: const pw.BoxDecoration(
-                        border: pw.Border(
-                          bottom: pw.BorderSide(
-                              color: PdfColors.black, width: 0.6),
-                        ),
-                      ),
-                    ),
+              child: pw.Container(
+                decoration: pw.BoxDecoration(
+                  border: pw.Border(
+                    bottom: pw.BorderSide(color: PdfColors.black, width: 0.8),
+                  ),
+                ),
+                padding: pw.EdgeInsets.only(bottom: 2, left: 4),
+                child: pw.Text(
+                  valor,
+                  style: pw.TextStyle(fontSize: 9.5),
+                ),
+              ),
             ),
+            pw.SizedBox(width: 80),
           ],
         ),
       );
@@ -453,10 +432,10 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
 
     return pw.Container(
       width: double.infinity,
-      padding: const pw.EdgeInsets.all(10),
+      padding: pw.EdgeInsets.fromLTRB(16, 16, 16, 4),
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: _azulBorde, width: 1),
-        borderRadius: pw.BorderRadius.circular(10),
+        border: pw.Border.all(color: borderColor, width: 1.5),
+        borderRadius: pw.BorderRadius.circular(16),
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -481,8 +460,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon:
-              const Icon(Icons.arrow_back_ios, color: Colors.white, size: 18),
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(
@@ -498,9 +476,24 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
-            onPressed: _abrirFormularioCompletar,
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: TextButton.icon(
+              onPressed: _abrirFormularioCompletar,
+              style: TextButton.styleFrom(
+                backgroundColor: Colors.white.withOpacity(0.15),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              ),
+              icon: const Icon(Icons.edit_document, size: 18),
+              label: const Text(
+                'Completar Datos',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ),
           ),
         ],
       ),
