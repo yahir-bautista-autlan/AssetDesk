@@ -73,159 +73,166 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Center(
-                      child: Image.asset(
-                        'assets/logo_autlan.png',
-                        height: 140,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Column(
-                            children: [
-                              Icon(
-                                Icons.change_history_rounded,
-                                size: 72,
-                                color: primaryPurple,
-                              ),
-                              SizedBox(height: 8),
-                              Text(
-                                'AUTLAN',
-                                style: TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFF34495E),
-                                  letterSpacing: 2.0,
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: AutofillGroup(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Image.asset(
+                          'assets/logo_autlan.png',
+                          height: 140,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Column(
+                              children: [
+                                Icon(
+                                  Icons.change_history_rounded,
+                                  size: 72,
+                                  color: primaryPurple,
                                 ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 60),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFF3F4F6), width: 1.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.02),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          TextFormField(
-                            controller: _correoCtrl,
-                            keyboardType: TextInputType.emailAddress,
-                            style: const TextStyle(fontSize: 15, color: Colors.black87),
-                            decoration: const InputDecoration(
-                              hintText: 'Ingresa correo de soporte',
-                              hintStyle: TextStyle(
-                                color: Color(0xFF9CA3AF),
-                                fontSize: 14,
-                              ),
-                              prefixIcon: Icon(
-                                Icons.mail_outline_rounded,
-                                color: primaryPurple,
-                                size: 20,
-                              ),
-                              filled: true,
-                              fillColor: Colors.transparent,
-                              contentPadding: EdgeInsets.symmetric(
-                                vertical: 16,
-                                horizontal: 16,
-                              ),
-                              border: InputBorder.none,
-                            ),
-                            validator: (val) =>
-                                val == null || val.isEmpty ? 'Ingresa tu correo' : null,
-                          ),
-                          const Divider(height: 1, color: Color(0xFFF3F4F6), thickness: 1.5),
-                          TextFormField(
-                            controller: _passCtrl,
-                            obscureText: _obscureText,
-                            style: const TextStyle(fontSize: 15, color: Colors.black87),
-                            decoration: InputDecoration(
-                              hintText: 'Contraseña',
-                              hintStyle: const TextStyle(
-                                color: Color(0xFF9CA3AF),
-                                fontSize: 14,
-                              ),
-                              prefixIcon: const Icon(
-                                Icons.lock_outline_rounded,
-                                color: primaryPurple,
-                                size: 20,
-                              ),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscureText
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
-                                  color: const Color(0xFF9CA3AF),
-                                  size: 20,
+                                SizedBox(height: 8),
+                                Text(
+                                  'AUTLAN',
+                                  style: TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF34495E),
+                                    letterSpacing: 2.0,
+                                  ),
                                 ),
-                                onPressed: () =>
-                                    setState(() => _obscureText = !_obscureText),
-                              ),
-                              filled: true,
-                              fillColor: Colors.transparent,
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 16,
-                                horizontal: 16,
-                              ),
-                              border: InputBorder.none,
-                            ),
-                            validator: (val) => val == null || val.isEmpty
-                                ? 'Ingresa tu contraseña'
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleLogin,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryPurple,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                              ],
+                            );
+                          },
                         ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text(
-                                'Iniciar Sesión',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white,
-                                ),
-                              ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 50),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 15,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            TextFormField(
+                              controller: _correoCtrl,
+                              keyboardType: TextInputType.emailAddress,
+                              autofillHints: const [AutofillHints.email, AutofillHints.username],
+                              textInputAction: TextInputAction.next,
+                              style: const TextStyle(fontSize: 16, color: Colors.black87),
+                              decoration: const InputDecoration(
+                                hintText: 'Ingresa correo de soporte',
+                                hintStyle: TextStyle(
+                                  color: Color(0xFF9CA3AF),
+                                  fontSize: 15,
+                                ),
+                                prefixIcon: Icon(
+                                  Icons.mail_outline_rounded,
+                                  color: primaryPurple,
+                                  size: 22,
+                                ),
+                                filled: true,
+                                fillColor: Colors.transparent,
+                                contentPadding: EdgeInsets.symmetric(
+                                  vertical: 18,
+                                  horizontal: 16,
+                                ),
+                                border: InputBorder.none,
+                              ),
+                              validator: (val) =>
+                                  val == null || val.isEmpty ? 'Ingresa tu correo' : null,
+                            ),
+                            const Divider(height: 1, color: Color(0xFFE5E7EB), thickness: 1.5),
+                            TextFormField(
+                              controller: _passCtrl,
+                              obscureText: _obscureText,
+                              autofillHints: const [AutofillHints.password],
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (_) => _handleLogin(),
+                              style: const TextStyle(fontSize: 16, color: Colors.black87),
+                              decoration: InputDecoration(
+                                hintText: 'Contraseña',
+                                hintStyle: const TextStyle(
+                                  color: Color(0xFF9CA3AF),
+                                  fontSize: 15,
+                                ),
+                                prefixIcon: const Icon(
+                                  Icons.lock_outline_rounded,
+                                  color: primaryPurple,
+                                  size: 22,
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscureText
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                    color: const Color(0xFF9CA3AF),
+                                    size: 22,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _obscureText = !_obscureText),
+                                ),
+                                filled: true,
+                                fillColor: Colors.transparent,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 18,
+                                  horizontal: 16,
+                                ),
+                                border: InputBorder.none,
+                              ),
+                              validator: (val) => val == null || val.isEmpty
+                                  ? 'Ingresa tu contraseña'
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      SizedBox(
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _handleLogin,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryPurple,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.5,
+                                  ),
+                                )
+                              : const Text(
+                                  'Iniciar Sesión',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
