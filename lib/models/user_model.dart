@@ -1,6 +1,6 @@
 import 'inventory_model.dart';
 
-class UsuarioModel {
+class UserModel {
   final String idUser;
   final String nombre;
   final String domain;
@@ -11,7 +11,7 @@ class UsuarioModel {
 
   bool get esAdmin => puesto == 'Administrador';
 
-  UsuarioModel({
+  UserModel({
     required this.idUser,
     required this.nombre,
     required this.domain,
@@ -21,7 +21,7 @@ class UsuarioModel {
     required this.status,
   });
 
-  factory UsuarioModel.fromJson(Map<String, dynamic> json) {
+  factory UserModel.fromJson(Map<String, dynamic> json) {
     var rawInventarios = json['inventarios'];
     List<InventoryModel> invList = [];
 
@@ -31,7 +31,7 @@ class UsuarioModel {
           .toList();
     }
 
-    return UsuarioModel(
+    return UserModel(
       idUser: json['idUser']?.toString() ?? '',
       nombre: json['nombre']?.toString() ?? '',
       domain: json['domain']?.toString() ?? '',
