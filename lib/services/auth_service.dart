@@ -15,6 +15,11 @@ class AuthService {
   static UserModel? get usuarioActual => _usuarioActual;
   static bool get esAdmin => _usuarioActual?.esAdmin ?? false;
 
+  static const Map<String, String> _headers = {
+    'Accept': 'application/json',
+    'Content-Type': 'text/plain', // Evita el CORS preflight en web
+  };
+
   static Future<UserModel?> obtenerUsuarioActual() async {
     if (_usuarioActual != null) return _usuarioActual;
     
@@ -40,6 +45,7 @@ class AuthService {
 
       final response = await http.post(
         Uri.parse(apiUrl),
+        headers: _headers,
         body: jsonEncode({
           'action': 'login',
           'correo': correo,
@@ -47,7 +53,7 @@ class AuthService {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 302) {
         final res = jsonDecode(response.body);
         if (res['status'] == 'success') {
           _usuarioActual = UserModel.fromJson(res['usuario']);
@@ -373,9 +379,10 @@ class AuthService {
     try {
       final response = await http.post(
         Uri.parse(apiUrl),
+        headers: _headers,
         body: jsonEncode(body),
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 302) {
         final res = jsonDecode(response.body);
         ultimoError = res['message'] ?? '';
         return res;
