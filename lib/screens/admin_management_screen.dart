@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
@@ -27,12 +28,9 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nombreController = TextEditingController();
   final _correoController = TextEditingController();
-  final _passwordController = TextEditingController();
 
   String? _puestoSeleccionado;
-
   bool _isLoading = false;
-  bool _obscurePassword = true;
   bool _esModoEdicion = false;
 
   List<Map<String, dynamic>> _usuarios = [];
@@ -50,7 +48,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     _searchController.dispose();
     _nombreController.dispose();
     _correoController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -95,6 +92,13 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     return inv.ubicacion.isNotEmpty ? inv.ubicacion : inv.nombre;
   }
 
+  String _generarPasswordTemporal() {
+    const chars = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz1234567890!@#\$&*';
+    final rnd = Random();
+    return String.fromCharCodes(Iterable.generate(
+        10, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
+  }
+
   Future<void> _cargarDatos() async {
     setState(() => _isLoading = true);
     try {
@@ -116,7 +120,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   void _limpiarFormulario() {
     _nombreController.clear();
     _correoController.clear();
-    _passwordController.clear();
     _puestoSeleccionado = null;
     _seleccionados.clear();
     _esModoEdicion = false;
@@ -127,7 +130,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       _esModoEdicion = true;
       _nombreController.text = (usuario['nombre'] ?? '').toString();
       _correoController.text = (usuario['correo'] ?? '').toString();
-      _passwordController.clear();
       _puestoSeleccionado =
           _puestoCanonico((usuario['puesto'] ?? '').toString()) ??
               _puestosDisponibles.first;
@@ -205,10 +207,11 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
         inventarios: _seleccionados.join(','),
       );
     } else {
+      final passwordTemporal = _generarPasswordTemporal();
       exito = await AuthService.registrarUsuario(
         nombre: _nombreController.text.trim(),
         correo: _correoController.text.trim(),
-        passwordPlana: _passwordController.text,
+        passwordPlana: passwordTemporal,
         puesto: _puestoSeleccionado ?? '',
         inventarios: _seleccionados.join(','),
       );
@@ -222,7 +225,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
         SnackBar(
           content: Text(_esModoEdicion
               ? 'Usuario actualizado correctamente'
-              : 'Usuario creado exitosamente'),
+              : 'Invitación enviada exitosamente'),
           backgroundColor: Colors.green,
         ),
       );
@@ -460,117 +463,123 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                        color: Color(0xFF111827), size: 24),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      _selectedTab == 0
-                          ? 'Gestión de Usuarios'
-                          : (_esModoEdicion ? 'Editar Usuario' : 'Crear Usuario'),
-                      style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF111827)),
-                    ),
-                  ),
-                  PopupMenuButton<String>(
-                    offset: const Offset(0, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    icon: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFD1D5DB),
-                        shape: BoxShape.circle,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: Column(
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Color(0xFF111827), size: 24),
+                        onPressed: () => Navigator.pop(context),
                       ),
-                      child: const Center(
-                        child: Icon(Icons.person,
-                            color: Color(0xFF4B5563), size: 24),
-                      ),
-                    ),
-                    onSelected: (value) async {
-                      if (value == 'logout') {
-                        await AuthService.logout();
-                        if (!context.mounted) return;
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(builder: (_) => const LoginScreen()),
-                          (route) => false,
-                        );
-                      }
-                    },
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<String>>[
-                      const PopupMenuItem<String>(
-                        value: 'logout',
-                        child: Row(
-                          children: [
-                            Icon(Icons.logout,
-                                color: Color(0xFFDC2626), size: 20),
-                            SizedBox(width: 12),
-                            Text(
-                              'Cerrar sesión',
-                              style: TextStyle(
-                                color: Color(0xFFDC2626),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          _selectedTab == 0
+                              ? 'Gestión de Usuarios'
+                              : (_esModoEdicion ? 'Editar Usuario' : 'Invitar Usuario'),
+                          style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF111827)),
                         ),
+                      ),
+                      PopupMenuButton<String>(
+                        offset: const Offset(0, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        icon: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFD1D5DB),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.person,
+                                color: Color(0xFF4B5563), size: 24),
+                          ),
+                        ),
+                        onSelected: (value) async {
+                          if (value == 'logout') {
+                            await AuthService.logout();
+                            if (!context.mounted) return;
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (_) => const LoginScreen()),
+                              (route) => false,
+                            );
+                          }
+                        },
+                        itemBuilder: (BuildContext context) =>
+                            <PopupMenuEntry<String>>[
+                          const PopupMenuItem<String>(
+                            value: 'logout',
+                            child: Row(
+                              children: [
+                                Icon(Icons.logout,
+                                    color: Color(0xFFDC2626), size: 20),
+                                SizedBox(width: 12),
+                                Text(
+                                  'Cerrar sesión',
+                                  style: TextStyle(
+                                    color: Color(0xFFDC2626),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE9EDF2),
-                  borderRadius: BorderRadius.circular(14),
                 ),
-                child: Row(
-                  children: [
-                    _tabBoton('Listado (${_usuarios.length})', 0, () {
-                      setState(() {
-                        _selectedTab = 0;
-                        _limpiarFormulario();
-                      });
-                    }),
-                    _tabBoton(
-                        _esModoEdicion ? 'Editar Usuario' : 'Nuevo Usuario', 1,
-                        () {
-                      setState(() {
-                        if (_selectedTab == 0) _limpiarFormulario();
-                        _selectedTab = 1;
-                      });
-                    }),
-                  ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE9EDF2),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        _tabBoton('Listado (${_usuarios.length})', 0, () {
+                          setState(() {
+                            _selectedTab = 0;
+                            _limpiarFormulario();
+                          });
+                        }),
+                        _tabBoton(
+                            _esModoEdicion ? 'Editar Usuario' : 'Invitar Usuario', 1,
+                            () {
+                          setState(() {
+                            if (_selectedTab == 0) _limpiarFormulario();
+                            _selectedTab = 1;
+                          });
+                        }),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: _selectedTab == 0
+                      ? _buildListadoView(usuariosFiltrados)
+                      : _buildFormularioUsuarioView(),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _selectedTab == 0
-                  ? _buildListadoView(usuariosFiltrados)
-                  : _buildFormularioUsuarioView(),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -796,243 +805,229 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildFieldLabel('NOMBRE COMPLETO'),
-            _buildTextField(_nombreController, 'Ej. Carlos Mendoza',
-                validatorMsg: 'Ingresa el nombre completo'),
-            const SizedBox(height: 16),
-            _buildFieldLabel('CORREO ELECTRÓNICO'),
-            _buildTextField(
-              _correoController,
-              'ejemplo@correo.com',
-              keyboardType: TextInputType.emailAddress,
-              validatorMsg: 'Ingresa un correo electrónico',
-              isEmail: true,
-              readOnly: _esModoEdicion,
-            ),
-            const SizedBox(height: 16),
-            if (!_esModoEdicion) ...[
-              _buildFieldLabel('CONTRASEÑA'),
-              _buildTextField(
-                _passwordController,
-                'Mínimo 6 caracteres',
-                obscureText: _obscurePassword,
-                isPassword: true,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      color: Colors.grey),
-                  onPressed: () =>
-                      setState(() => _obscurePassword = !_obscurePassword),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 700),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildFieldLabel('NOMBRE COMPLETO'),
+                _buildTextField(_nombreController, 'Ej. Carlos Mendoza',
+                    validatorMsg: 'Ingresa el nombre completo'),
+                const SizedBox(height: 16),
+                _buildFieldLabel('CORREO ELECTRÓNICO'),
+                _buildTextField(
+                  _correoController,
+                  'ejemplo@correo.com',
+                  keyboardType: TextInputType.emailAddress,
+                  validatorMsg: 'Ingresa un correo electrónico',
+                  isEmail: true,
+                  readOnly: _esModoEdicion,
                 ),
-                validatorMsg: 'Ingresa la contraseña',
-              ),
-              const SizedBox(height: 16),
-            ],
-            _buildFieldLabel('PUESTO'),
-            _buildDropdownPuesto(),
-            const SizedBox(height: 20),
-            const Divider(color: Color(0xFFE5E7EB)),
-            const SizedBox(height: 12),
-            const Text(
-              'INVENTARIOS ASIGNADOS',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: primaryPurple,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 2),
-            const Text(
-              'Selecciona uno o más espacios de trabajo',
-              style: TextStyle(fontSize: 12, color: Colors.black45),
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              key: ValueKey('inv_${_seleccionados.length}_${_catalogo.length}'),
-              initialValue: null,
-              isExpanded: true,
-              hint: const Text('Seleccionar inventario...',
-                  style: TextStyle(color: Colors.black38, fontSize: 14)),
-              items: opciones
-                  .map((inv) => DropdownMenuItem<String>(
-                        value: inv.id,
-                        child: Text(inv.nombre,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 14)),
-                      ))
-                  .toList(),
-              onChanged: opciones.isEmpty
-                  ? null
-                  : (val) {
-                      if (val != null && !_seleccionados.contains(val)) {
-                        setState(() => _seleccionados.add(val));
-                      }
-                    },
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: primaryPurple, width: 1.2),
+                const SizedBox(height: 16),
+                _buildFieldLabel('PUESTO'),
+                _buildDropdownPuesto(),
+                const SizedBox(height: 20),
+                const Divider(color: Color(0xFFE5E7EB)),
+                const SizedBox(height: 12),
+                const Text(
+                  'INVENTARIOS ASIGNADOS',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: primaryPurple,
+                    letterSpacing: 0.5,
+                  ),
                 ),
-                disabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: primaryPurple, width: 1.2),
+                const SizedBox(height: 2),
+                const Text(
+                  'Selecciona uno o más espacios de trabajo para el usuario',
+                  style: TextStyle(fontSize: 12, color: Colors.black45),
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: primaryPurple, width: 1.8),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _seleccionados.map((id) {
-                return Chip(
-                  label: Text(
-                    _etiqueta(id),
-                    style: const TextStyle(
-                      color: primaryPurple,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  key: ValueKey('inv_${_seleccionados.length}_${_catalogo.length}'),
+                  initialValue: null,
+                  isExpanded: true,
+                  hint: const Text('Seleccionar inventario...',
+                      style: TextStyle(color: Colors.black38, fontSize: 14)),
+                  items: opciones
+                      .map((inv) => DropdownMenuItem<String>(
+                            value: inv.id,
+                            child: Text(inv.nombre,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14)),
+                          ))
+                      .toList(),
+                  onChanged: opciones.isEmpty
+                      ? null
+                      : (val) {
+                          if (val != null && !_seleccionados.contains(val)) {
+                            setState(() => _seleccionados.add(val));
+                          }
+                        },
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          const BorderSide(color: primaryPurple, width: 1.2),
+                    ),
+                    disabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          const BorderSide(color: primaryPurple, width: 1.2),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          const BorderSide(color: primaryPurple, width: 1.8),
                     ),
                   ),
-                  backgroundColor: lightPurpleBg,
-                  deleteIcon:
-                      const Icon(Icons.close, size: 14, color: primaryPurple),
-                  onDeleted: () {
-                    setState(() => _seleccionados.remove(id));
-                  },
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    side: const BorderSide(color: Color(0xFFD9C8EA)),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFECFDF3),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFBBF7D0)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.add_circle,
-                      color: Color(0xFF16A34A), size: 22),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      '¿Deseas agregar un inventario nuevo a la base de datos?',
-                      style: TextStyle(
-                          fontSize: 12,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _seleccionados.map((id) {
+                    return Chip(
+                      label: Text(
+                        _etiqueta(id),
+                        style: const TextStyle(
+                          color: primaryPurple,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF166534)),
+                          fontSize: 12,
+                        ),
+                      ),
+                      backgroundColor: lightPurpleBg,
+                      deleteIcon:
+                          const Icon(Icons.close, size: 14, color: primaryPurple),
+                      onDeleted: () {
+                        setState(() => _seleccionados.remove(id));
+                      },
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        side: const BorderSide(color: Color(0xFFD9C8EA)),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF3),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFBBF7D0)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.add_circle,
+                          color: Color(0xFF16A34A), size: 22),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          '¿Deseas agregar un inventario nuevo a la base de datos?',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF166534)),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _isLoading ? null : _crearInventario,
+                        child: const Text(
+                          'Toca aquí',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF16A34A),
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Opacity(
+                  opacity: _isLoading ? 0.7 : 1,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Ink(
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xFF6B3F96), Color(0xFF4A2574)],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: _isLoading ? null : _guardarOActualizarUsuario,
+                        child: Container(
+                          height: 52,
+                          alignment: Alignment.center,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(
+                                  _esModoEdicion
+                                      ? 'Guardar Cambios'
+                                      : 'Enviar Invitación',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                      ),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: _isLoading ? null : _crearInventario,
+                ),
+                if (_esModoEdicion) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Color(0xFFE5E7EB)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _limpiarFormulario();
+                        _selectedTab = 0;
+                      });
+                    },
                     child: const Text(
-                      'Toca aquí',
+                      'Cancelar Edición',
                       style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF16A34A),
-                        decoration: TextDecoration.underline,
+                        color: Color(0xFF4B5563),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ],
-              ),
+                const SizedBox(height: 24),
+              ],
             ),
-            const SizedBox(height: 24),
-            Opacity(
-              opacity: _isLoading ? 0.7 : 1,
-              child: Material(
-                color: Colors.transparent,
-                child: Ink(
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0xFF6B3F96), Color(0xFF4A2574)],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: _isLoading ? null : _guardarOActualizarUsuario,
-                    child: Container(
-                      height: 52,
-                      alignment: Alignment.center,
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Text(
-                              _esModoEdicion
-                                  ? 'Guardar Cambios'
-                                  : 'Guardar Usuario',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (_esModoEdicion) ...[
-              const SizedBox(height: 12),
-              OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(color: Color(0xFFE5E7EB)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: () {
-                  setState(() {
-                    _limpiarFormulario();
-                    _selectedTab = 0;
-                  });
-                },
-                child: const Text(
-                  'Cancelar Edición',
-                  style: TextStyle(
-                    color: Color(0xFF4B5563),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 24),
-          ],
+          ),
         ),
       ),
     );
@@ -1062,7 +1057,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     String? validatorMsg,
     bool readOnly = false,
     bool isEmail = false,
-    bool isPassword = false,
   }) {
     return TextFormField(
       controller: controller,
@@ -1077,9 +1071,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
             val != null &&
             !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val)) {
           return 'Ingresa un formato de correo válido';
-        }
-        if (isPassword && val != null && val.length < 6) {
-          return 'La contraseña debe tener al menos 6 caracteres';
         }
         return null;
       },
