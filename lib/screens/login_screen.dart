@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import 'inventory_selection_screen.dart';
 
@@ -10,57 +11,62 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  static const primaryPurple = Color(0xFF532E7C);
+  static const primaryPurple = Color(0xFF4A2574);
 
-  final _formKey = GlobalKey<FormState>();
-  final _correoCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isLoading = false;
-  bool _obscureText = true;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
-    _correoCtrl.dispose();
-    _passCtrl.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) return;
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor completa todos los campos')),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
-    final success = await AuthService.login(
-      _correoCtrl.text.trim(),
-      _passCtrl.text.trim(),
-    );
+    final success = await AuthService.login(email, password);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (success) {
-      final user = await AuthService.obtenerUsuarioActual();
-      if (user != null) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => InventorySelectionScreen(
-              inventariosVinculados: user.inventarios,
-            ),
-          ),
-        );
-      }
-    } else {
+    if (!success) {
+      final detalle = AuthService.ultimoError.isEmpty
+          ? 'Correo o contraseña incorrectos'
+          : AuthService.ultimoError;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            AuthService.ultimoError.isNotEmpty
-                ? AuthService.ultimoError
-                : 'Error al iniciar sesión',
-          ),
+          content: Text(detalle),
+          duration: const Duration(seconds: 8),
           backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final user = await AuthService.obtenerUsuarioActual();
+    if (user != null) {
+      TextInput.finishAutofillContext();
+      
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => InventorySelectionScreen(
+            inventariosVinculados: user.inventarios,
+          ),
         ),
       );
     }
@@ -70,167 +76,179 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: AutofillGroup(
-                child: Form(
-                  key: _formKey,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0.9, -1.0),
+            radius: 1.2,
+            colors: [Color(0xFFF1EAF7), Colors.white],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 28.0),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: AutofillGroup(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Center(
-                        child: Image.asset(
-                          'assets/logo_autlan.png',
-                          height: 180, // Tamaño optimizado y proporcional
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Column(
-                              children: [
-                                Icon(
-                                  Icons.change_history_rounded,
-                                  size: 84,
-                                  color: primaryPurple,
-                                ),
-                                SizedBox(height: 10),
-                                Text(
-                                  'AUTLAN',
-                                  style: TextStyle(
-                                    fontSize: 34,
-                                    fontWeight: FontWeight.w900,
-                                    color: Color(0xFF34495E),
-                                    letterSpacing: 2.0,
+                        child: SizedBox(
+                          width: 300,
+                          height: 220,
+                          child: Image.asset(
+                            'assets/logo_autlan.png',
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.change_history_rounded,
+                                      size: 100, color: primaryPurple),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'AUTLAN',
+                                    style: TextStyle(
+                                      fontSize: 40,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF2F4858),
+                                      letterSpacing: 1,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            );
-                          },
+                                ],
+                              );
+                            },
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 36),
+                      const SizedBox(height: 24),
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFF0F0F3)),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withOpacity(0.04),
-                              blurRadius: 15,
-                              offset: const Offset(0, 6),
+                              blurRadius: 16,
+                              offset: const Offset(0, 4),
                             ),
                           ],
                         ),
                         child: Column(
                           children: [
-                            TextFormField(
-                              controller: _correoCtrl,
+                            TextField(
+                              controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
-                              autofillHints: const [AutofillHints.email, AutofillHints.username],
-                              textInputAction: TextInputAction.next,
-                              style: const TextStyle(fontSize: 16, color: Colors.black87),
+                              autofillHints: const [
+                                AutofillHints.email,
+                                AutofillHints.username
+                              ],
+                              style: const TextStyle(fontSize: 14),
                               decoration: const InputDecoration(
                                 hintText: 'Ingresa correo de soporte',
                                 hintStyle: TextStyle(
-                                  color: Color(0xFF9CA3AF),
-                                  fontSize: 15,
-                                ),
-                                prefixIcon: Icon(
-                                  Icons.mail_outline_rounded,
-                                  color: primaryPurple,
-                                  size: 22,
-                                ),
-                                filled: true,
-                                fillColor: Colors.transparent,
-                                contentPadding: EdgeInsets.symmetric(
-                                  vertical: 18,
-                                  horizontal: 16,
-                                ),
+                                    color: Color(0xFF9CA3AF), fontSize: 14),
+                                prefixIcon: Icon(Icons.mail_outline_rounded,
+                                    color: primaryPurple, size: 18),
                                 border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(
+                                    vertical: 18, horizontal: 12),
                               ),
-                              validator: (val) =>
-                                  val == null || val.isEmpty ? 'Ingresa tu correo' : null,
                             ),
-                            const Divider(height: 1, color: Color(0xFFE5E7EB), thickness: 1.5),
-                            TextFormField(
-                              controller: _passCtrl,
-                              obscureText: _obscureText,
+                            const Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: Color(0xFFF0F0F3)),
+                            TextField(
+                              controller: _passwordController,
+                              obscureText: _obscurePassword,
                               autofillHints: const [AutofillHints.password],
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => _handleLogin(),
-                              style: const TextStyle(fontSize: 16, color: Colors.black87),
+                              style: const TextStyle(fontSize: 14),
+                              onSubmitted: (_) {
+                                if (!_isLoading) _handleLogin();
+                              },
                               decoration: InputDecoration(
                                 hintText: 'Contraseña',
                                 hintStyle: const TextStyle(
-                                  color: Color(0xFF9CA3AF),
-                                  fontSize: 15,
-                                ),
+                                    color: Color(0xFF9CA3AF), fontSize: 14),
                                 prefixIcon: const Icon(
-                                  Icons.lock_outline_rounded,
-                                  color: primaryPurple,
-                                  size: 22,
-                                ),
+                                    Icons.lock_outline_rounded,
+                                    color: primaryPurple,
+                                    size: 18),
                                 suffixIcon: IconButton(
                                   icon: Icon(
-                                    _obscureText
+                                    _obscurePassword
                                         ? Icons.visibility_off_outlined
                                         : Icons.visibility_outlined,
-                                    color: const Color(0xFF9CA3AF),
-                                    size: 22,
+                                    color: const Color(0xFF6B7280),
+                                    size: 18,
                                   ),
-                                  onPressed: () =>
-                                      setState(() => _obscureText = !_obscureText),
-                                ),
-                                filled: true,
-                                fillColor: Colors.transparent,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  vertical: 18,
-                                  horizontal: 16,
+                                  onPressed: () => setState(() =>
+                                      _obscurePassword = !_obscurePassword),
                                 ),
                                 border: InputBorder.none,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    vertical: 18, horizontal: 12),
                               ),
-                              validator: (val) => val == null || val.isEmpty
-                                  ? 'Ingresa tu contraseña'
-                                  : null,
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 28),
-                      SizedBox(
-                        height: 56,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _handleLogin,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: primaryPurple,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                      Opacity(
+                        opacity: _isLoading ? 0.7 : 1,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Ink(
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0xFF6B3F96), Color(0xFF4A2574)],
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: primaryPurple.withOpacity(0.25),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(10),
+                              onTap: _isLoading ? null : _handleLogin,
+                              child: Container(
+                                height: 48,
+                                alignment: Alignment.center,
+                                child: _isLoading
+                                    ? const SizedBox(
+                                        height: 22,
+                                        width: 22,
+                                        child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2.5),
+                                      )
+                                    : const Text(
+                                        'Iniciar Sesión',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                              ),
                             ),
                           ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.5,
-                                  ),
-                                )
-                              : const Text(
-                                  'Iniciar Sesión',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white,
-                                  ),
-                                ),
                         ),
                       ),
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
