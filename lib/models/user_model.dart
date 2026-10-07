@@ -1,44 +1,56 @@
 import 'inventory_model.dart';
 
-class UserModel {
-  final String id;
+class UsuarioModel {
+  final String idUser;
   final String nombre;
+  final String domain;
   final String correo;
   final String puesto;
-  final bool esAdmin;
   final List<InventoryModel> inventarios;
+  final String status;
 
-  UserModel({
-    required this.id,
+  bool get esAdmin => puesto == 'Administrador';
+
+  UsuarioModel({
+    required this.idUser,
     required this.nombre,
+    required this.domain,
     required this.correo,
     required this.puesto,
-    required this.esAdmin,
     required this.inventarios,
+    required this.status,
   });
 
-  factory UserModel.fromJson(Map<String, dynamic> json, List<InventoryModel> catalogoInventarios) {
-    final puestoStr = (json['PUESTO'] ?? json['puesto'] ?? '').toString();
-    final esAdmin = puestoStr.toLowerCase().contains('admin') || 
-                    (json['ES_ADMIN'] ?? json['es_admin'] ?? false) == true;
+  factory UsuarioModel.fromJson(Map<String, dynamic> json) {
+    var rawInventarios = json['inventarios'];
+    List<InventoryModel> invList = [];
 
-    final String invString = (json['INVENTARIOS'] ?? json['inventarios'] ?? '').toString();
-    final List<String> invIds = invString.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-
-    List<InventoryModel> misInventarios = [];
-    for (var id in invIds) {
-      try {
-        misInventarios.add(catalogoInventarios.firstWhere((inv) => inv.id == id));
-      } catch (_) {}
+    if (rawInventarios is List) {
+      invList = rawInventarios
+          .map((i) => InventoryModel.fromJson(i))
+          .toList();
     }
 
-    return UserModel(
-      id: (json['ID'] ?? json['id'] ?? '').toString(),
-      nombre: (json['NOMBRE'] ?? json['nombre'] ?? '').toString(),
-      correo: (json['CORREO'] ?? json['correo'] ?? '').toString(),
-      puesto: puestoStr,
-      esAdmin: esAdmin,
-      inventarios: misInventarios,
+    return UsuarioModel(
+      idUser: json['idUser']?.toString() ?? '',
+      nombre: json['nombre']?.toString() ?? '',
+      domain: json['domain']?.toString() ?? '',
+      correo: json['correo']?.toString() ?? '',
+      puesto: json['puesto']?.toString() ?? '',
+      inventarios: invList,
+      status: json['status']?.toString() ?? 'Activo',
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'idUser': idUser,
+      'nombre': nombre,
+      'domain': domain,
+      'correo': correo,
+      'puesto': puesto,
+      'inventarios': inventarios.map((i) => i.toJson()).toList(),
+      'status': status,
+    };
   }
 }

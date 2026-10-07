@@ -97,12 +97,14 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   Future<void> _cargarDatos() async {
     setState(() => _isLoading = true);
     try {
-      // LLAMADA ÚNICA OPTIMIZADA: Evita múltiples requests y errores 404
-      final resultado = await AuthService.obtenerDatosCompletos();
+      // Ajusta estos métodos si en tu AuthService tienen otro nombre exacto
+      final usuariosRes = await AuthService.obtenerUsuarios();
+      final inventariosRes = await AuthService.obtenerInventarios();
+
       if (!mounted) return;
       setState(() {
-        _usuarios = resultado['usuarios'] as List<Map<String, dynamic>>;
-        _catalogo = resultado['inventarios'] as List<InventoryModel>;
+        _usuarios = List<Map<String, dynamic>>.from(usuariosRes);
+        _catalogo = List<InventoryModel>.from(inventariosRes);
         _isLoading = false;
       });
     } catch (_) {
@@ -148,6 +150,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       nombre: datos['nombre'] ?? '',
       spreadsheet: datos['sheet'] ?? '',
       ubicacion: datos['ubicacion'] ?? '',
+      responsableEmail: datos['responsable'] ?? '',
     );
     if (!mounted) return;
 
@@ -159,15 +162,17 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       }
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(nuevo != null
-            ? 'Inventario ${nuevo.id} creado y asignado'
-            : (AuthService.ultimoError.isEmpty
-                ? 'No se pudo crear el inventario'
-                : AuthService.ultimoError)),
-      ),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(nuevo != null
+              ? 'Inventario ${nuevo.id} creado y asignado'
+              : (AuthService.ultimoError.isEmpty
+                  ? 'No se pudo crear el inventario'
+                  : AuthService.ultimoError)),
+        ),
+      );
+    }
   }
 
   Future<void> _guardarOActualizarUsuario() async {
@@ -196,15 +201,15 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
         correo: _correoController.text.trim(),
         nombre: _nombreController.text.trim(),
         puesto: _puestoSeleccionado ?? '',
-        inventarios: List<String>.from(_seleccionados),
+        inventarios: _seleccionados.join(','),
       );
     } else {
       exito = await AuthService.registrarUsuario(
         nombre: _nombreController.text.trim(),
         correo: _correoController.text.trim(),
-        password: _passwordController.text,
+        passwordPlana: _passwordController.text,
         puesto: _puestoSeleccionado ?? '',
-        inventarios: List<String>.from(_seleccionados),
+        inventarios: _seleccionados.join(','),
       );
     }
 
@@ -1126,6 +1131,7 @@ class _NuevoInventarioDialogState extends State<_NuevoInventarioDialog> {
   final _nombre = TextEditingController();
   final _sheet = TextEditingController();
   final _ubicacion = TextEditingController();
+  final _responsable = TextEditingController();
   String? _error;
 
   @override
@@ -1133,6 +1139,7 @@ class _NuevoInventarioDialogState extends State<_NuevoInventarioDialog> {
     _nombre.dispose();
     _sheet.dispose();
     _ubicacion.dispose();
+    _responsable.dispose();
     super.dispose();
   }
 
@@ -1150,14 +1157,17 @@ class _NuevoInventarioDialogState extends State<_NuevoInventarioDialog> {
   }
 
   void _guardar() {
-    if (_nombre.text.trim().isEmpty || _sheet.text.trim().isEmpty) {
-      setState(() => _error = 'El nombre y el Spreadsheet son obligatorios');
+    if (_nombre.text.trim().isEmpty || 
+        _sheet.text.trim().isEmpty || 
+        _responsable.text.trim().isEmpty) {
+      setState(() => _error = 'Nombre, Spreadsheet y Responsable son obligatorios');
       return;
     }
     Navigator.pop(context, {
       'nombre': _nombre.text.trim(),
       'sheet': _sheet.text.trim(),
       'ubicacion': _ubicacion.text.trim(),
+      'responsable': _responsable.text.trim(),
     });
   }
 
@@ -1186,6 +1196,12 @@ class _NuevoInventarioDialogState extends State<_NuevoInventarioDialog> {
               controller: _ubicacion,
               decoration: _decoracion('Ubicación. Ej. Tamos'),
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _responsable,
+              keyboardType: TextInputType.emailAddress,
+              decoration: _decoracion('Correo del responsable'),
+            ),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!,
@@ -1199,7 +1215,7 @@ class _NuevoInventarioDialogState extends State<_NuevoInventarioDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancelar',
               style: TextStyle(color: Color(0xFF4B5563)),
-            ),
+          ),
         ),
         TextButton(
           onPressed: _guardar,

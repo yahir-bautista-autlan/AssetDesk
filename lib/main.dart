@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'models/user_model.dart';
+import 'models/usuario_model.dart';
 import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/admin_management_screen.dart';
@@ -37,7 +37,7 @@ class SessionGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<UserModel?>(
+    return FutureBuilder<UsuarioModel?>(
       future: AuthService.obtenerUsuarioActual(),
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {

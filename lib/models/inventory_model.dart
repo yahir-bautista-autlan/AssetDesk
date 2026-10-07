@@ -1,49 +1,39 @@
 class InventoryModel {
   final String id;
   final String nombre;
+  final String responsableEmail;
   final String spreadsheetId;
   final String nombreVisible;
   final String ubicacion;
 
-  const InventoryModel({
+  InventoryModel({
     required this.id,
     required this.nombre,
+    required this.responsableEmail,
     required this.spreadsheetId,
     required this.nombreVisible,
     required this.ubicacion,
   });
 
-  factory InventoryModel.fromJson(dynamic json) {
-    if (json is Map) {
-      final id = (json['id'] ?? '').toString();
-      final nombre = (json['nombre'] ?? '').toString();
-      final sheetId = (json['spreadsheetId'] ?? '').toString();
-      final visible = (json['nombreVisible'] ?? sheetId).toString();
-      final ubicacion = (json['ubicacion'] ?? '').toString();
-
-      return InventoryModel(
-        id: id,
-        nombre: nombre.isEmpty ? id : nombre,
-        spreadsheetId: sheetId,
-        nombreVisible: visible.isEmpty ? sheetId : visible,
-        ubicacion: ubicacion,
-      );
-    }
-    final texto = json.toString();
+  factory InventoryModel.fromJson(Map<String, dynamic> json) {
     return InventoryModel(
-      id: texto,
-      nombre: texto,
-      spreadsheetId: texto,
-      nombreVisible: texto,
-      ubicacion: '',
+      id: json['id']?.toString() ?? '',
+      nombre: json['nombre']?.toString() ?? '',
+      responsableEmail: json['responsableEmail']?.toString() ?? '',
+      spreadsheetId: json['spreadsheetId']?.toString() ?? '',
+      nombreVisible: json['nombreVisible']?.toString() ?? '',
+      ubicacion: json['ubicacion']?.toString() ?? '',
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'nombre': nombre,
-        'spreadsheetId': spreadsheetId,
-        'nombreVisible': nombreVisible,
-        'ubicacion': ubicacion,
-      };
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'responsableEmail': responsableEmail,
+      'spreadsheetId': spreadsheetId,
+      'nombreVisible': nombreVisible,
+      'ubicacion': ubicacion,
+    };
+  }
 }

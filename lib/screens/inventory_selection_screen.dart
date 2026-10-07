@@ -53,7 +53,9 @@ class InventorySelectionScreen extends StatelessWidget {
                           size: 34,
                         ),
                         onSelected: (value) async {
-                          if (value == 'logout') {
+                          if (value == 'admin') {
+                            Navigator.pushReplacementNamed(context, '/admin');
+                          } else if (value == 'logout') {
                             await AuthService.logout();
                             if (!context.mounted) return;
                             Navigator.pushNamedAndRemoveUntil(
@@ -65,12 +67,38 @@ class InventorySelectionScreen extends StatelessWidget {
                         },
                         itemBuilder: (BuildContext context) =>
                             <PopupMenuEntry<String>>[
+                          if (AuthService.esAdmin) ...[
+                            const PopupMenuItem<String>(
+                              value: 'admin',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.admin_panel_settings_outlined,
+                                    color: primaryPurple,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text(
+                                    'Panel de Administración',
+                                    style: TextStyle(
+                                      color: primaryPurple,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuDivider(),
+                          ],
                           const PopupMenuItem<String>(
                             value: 'logout',
                             child: Row(
                               children: [
-                                Icon(Icons.logout,
-                                    color: Color(0xFFDC2626), size: 20),
+                                Icon(
+                                  Icons.logout,
+                                  color: Color(0xFFDC2626),
+                                  size: 20,
+                                ),
                                 SizedBox(width: 12),
                                 Text(
                                   'Cerrar sesión',
@@ -96,29 +124,30 @@ class InventorySelectionScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  
-                  // GRID DE INVENTARIOS CON MEJOR PROPORCIÓN
                   Expanded(
                     child: inventariosVinculados.isEmpty
                         ? const Center(
                             child: Text(
                               'No tienes inventarios asignados.',
-                              style:
-                                  TextStyle(color: Colors.black45, fontSize: 14),
+                              style: TextStyle(
+                                  color: Colors.black45, fontSize: 14),
                             ),
                           )
                         : LayoutBuilder(
                             builder: (context, constraints) {
-                              int crossAxisCount = constraints.maxWidth > 700 ? 2 : 1;
+                              int crossAxisCount =
+                                  constraints.maxWidth > 700 ? 2 : 1;
 
                               return GridView.builder(
-                                padding: const EdgeInsets.only(top: 4, bottom: 16),
-                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                padding: const EdgeInsets.only(
+                                    top: 4, bottom: 16),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: crossAxisCount,
                                   crossAxisSpacing: 24,
                                   mainAxisSpacing: 24,
-                                  // Relación ajustada para que la tarjeta sea más compacta y los elementos luzcan grandes
-                                  childAspectRatio: crossAxisCount == 2 ? 1.6 : 2.2,
+                                  childAspectRatio:
+                                      crossAxisCount == 2 ? 1.6 : 2.2,
                                 ),
                                 itemCount: inventariosVinculados.length,
                                 itemBuilder: (context, index) {
@@ -129,14 +158,11 @@ class InventorySelectionScreen extends StatelessWidget {
                             },
                           ),
                   ),
-
                   const SizedBox(height: 12),
-                  
-                  // BANNER INFERIOR
                   Container(
                     width: double.infinity,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 14),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(24),
@@ -233,7 +259,6 @@ class InventorySelectionScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
             child: Row(
               children: [
-                // IMAGEN / ICONO MÁS GRANDE A LA IZQUIERDA
                 Container(
                   width: 82,
                   height: 82,
@@ -257,8 +282,6 @@ class InventorySelectionScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 20),
-                
-                // TEXTOS AMPLIADOS A LA DERECHA
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,

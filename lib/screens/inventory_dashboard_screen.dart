@@ -662,7 +662,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                 icon: const Icon(Icons.account_circle_outlined,
                     color: Colors.black, size: 34),
                 onSelected: (value) async {
-                  if (value == 'logout') {
+                  if (value == 'admin') {
+                    Navigator.pushNamed(context, '/admin');
+                  } else if (value == 'logout') {
                     await AuthService.logout();
                     if (!context.mounted) return;
                     Navigator.pushNamedAndRemoveUntil(
@@ -671,6 +673,25 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                 },
                 itemBuilder: (BuildContext context) =>
                     <PopupMenuEntry<String>>[
+                  if (AuthService.esAdmin) ...[
+                    const PopupMenuItem<String>(
+                      value: 'admin',
+                      child: Row(
+                        children: [
+                          Icon(Icons.admin_panel_settings_outlined, color: primaryPurple, size: 20),
+                          SizedBox(width: 12),
+                          Text(
+                            'Panel de Administración',
+                            style: TextStyle(
+                              color: primaryPurple,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                  ],
                   const PopupMenuItem<String>(
                     value: 'logout',
                     child: Row(
@@ -952,24 +973,24 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                   child: Row(
                     children: headers
                         .map((h) => SizedBox(
-                              width: _colWidth,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    h,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                      color: Color(0xFF6B7280),
-                                    ),
+                            width: _colWidth,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  h,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: Color(0xFF6B7280),
                                   ),
                                 ),
                               ),
-                            ))
+                            ),
+                          ))
                         .toList(),
                   ),
                 ),
