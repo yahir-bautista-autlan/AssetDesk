@@ -81,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28.0),
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
               child: Form(
@@ -90,132 +90,119 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Column(
-                      children: [
-                        Icon(
-                          Icons.change_history_rounded,
-                          size: 72,
-                          color: primaryPurple,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'AUTLAN',
-                          style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF34495E),
-                            letterSpacing: 2.0,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 48),
-                    TextFormField(
-                      controller: _correoCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      style: const TextStyle(fontSize: 15, color: Colors.black87),
-                      decoration: InputDecoration(
-                        hintText: 'Ingresa correo de soporte',
-                        hintStyle: const TextStyle(
-                          color: Color(0xFF9CA3AF),
-                          fontSize: 14,
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.mail_outline_rounded,
-                          color: primaryPurple,
-                          size: 20,
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 16,
-                          horizontal: 16,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE5E7EB),
-                            width: 1,
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE5E7EB),
-                            width: 1,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
-                            color: primaryPurple,
-                            width: 1.5,
-                          ),
-                        ),
+                    Center(
+                      child: Image.asset(
+                        'assets/logo_autlan.png',
+                        height: 140,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Column(
+                            children: [
+                              Icon(
+                                Icons.change_history_rounded,
+                                size: 72,
+                                color: primaryPurple,
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'AUTLAN',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF34495E),
+                                  letterSpacing: 2.0,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
-                      validator: (val) =>
-                          val == null || val.isEmpty ? 'Ingresa tu correo' : null,
                     ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passCtrl,
-                      obscureText: _obscureText,
-                      style: const TextStyle(fontSize: 15, color: Colors.black87),
-                      decoration: InputDecoration(
-                        hintText: 'Contraseña',
-                        hintStyle: const TextStyle(
-                          color: Color(0xFF9CA3AF),
-                          fontSize: 14,
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.lock_outline_rounded,
-                          color: primaryPurple,
-                          size: 20,
-                        ),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscureText
-                                ? Icons.visibility_off_outlined
-                                : Icons.visibility_outlined,
-                            color: const Color(0xFF9CA3AF),
-                            size: 20,
+                    const SizedBox(height: 60),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFF3F4F6), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.02),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
                           ),
-                          onPressed: () =>
-                              setState(() => _obscureText = !_obscureText),
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 16,
-                          horizontal: 16,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE5E7EB),
-                            width: 1,
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFE5E7EB),
-                            width: 1,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
-                            color: primaryPurple,
-                            width: 1.5,
-                          ),
-                        ),
+                        ],
                       ),
-                      validator: (val) => val == null || val.isEmpty
-                          ? 'Ingresa tu contraseña'
-                          : null,
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _correoCtrl,
+                            keyboardType: TextInputType.emailAddress,
+                            style: const TextStyle(fontSize: 15, color: Colors.black87),
+                            decoration: const InputDecoration(
+                              hintText: 'Ingresa correo de soporte',
+                              hintStyle: TextStyle(
+                                color: Color(0xFF9CA3AF),
+                                fontSize: 14,
+                              ),
+                              prefixIcon: Icon(
+                                Icons.mail_outline_rounded,
+                                color: primaryPurple,
+                                size: 20,
+                              ),
+                              filled: true,
+                              fillColor: Colors.transparent,
+                              contentPadding: EdgeInsets.symmetric(
+                                vertical: 16,
+                                horizontal: 16,
+                              ),
+                              border: InputBorder.none,
+                            ),
+                            validator: (val) =>
+                                val == null || val.isEmpty ? 'Ingresa tu correo' : null,
+                          ),
+                          const Divider(height: 1, color: Color(0xFFF3F4F6), thickness: 1.5),
+                          TextFormField(
+                            controller: _passCtrl,
+                            obscureText: _obscureText,
+                            style: const TextStyle(fontSize: 15, color: Colors.black87),
+                            decoration: InputDecoration(
+                              hintText: 'Contraseña',
+                              hintStyle: const TextStyle(
+                                color: Color(0xFF9CA3AF),
+                                fontSize: 14,
+                              ),
+                              prefixIcon: const Icon(
+                                Icons.lock_outline_rounded,
+                                color: primaryPurple,
+                                size: 20,
+                              ),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureText
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  color: const Color(0xFF9CA3AF),
+                                  size: 20,
+                                ),
+                                onPressed: () =>
+                                    setState(() => _obscureText = !_obscureText),
+                              ),
+                              filled: true,
+                              fillColor: Colors.transparent,
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 16,
+                                horizontal: 16,
+                              ),
+                              border: InputBorder.none,
+                            ),
+                            validator: (val) => val == null || val.isEmpty
+                                ? 'Ingresa tu contraseña'
+                                : null,
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
                     SizedBox(
                       height: 52,
                       child: ElevatedButton(
@@ -224,7 +211,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           backgroundColor: primaryPurple,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                         child: _isLoading
@@ -239,10 +226,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             : const Text(
                                 'Iniciar Sesión',
                                 style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
                                   color: Colors.white,
-                                  letterSpacing: 0.2,
                                 ),
                               ),
                       ),

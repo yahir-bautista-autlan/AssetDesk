@@ -40,7 +40,6 @@ class AuthService {
 
       final response = await http.post(
         Uri.parse(apiUrl),
-        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'action': 'login',
           'correo': correo,
@@ -374,7 +373,6 @@ class AuthService {
     try {
       final response = await http.post(
         Uri.parse(apiUrl),
-        headers: {'Content-Type': 'application/json'},
         body: jsonEncode(body),
       );
       if (response.statusCode == 200) {
