@@ -9,13 +9,13 @@ import '../models/solicitud_model.dart';
 class AuthService {
   static const String apiUrl = 'https://script.google.com/macros/s/AKfycbxdDGzCjqaXJuwaH76yiVPGjmeo5alpU1hG5PtAuCxw-yRGQmu8GYkP-e-rSWf5P0tY/exec'; 
   
-  static UsuarioModel? _usuarioActual;
+  static UserModel? _usuarioActual;
   static String ultimoError = '';
 
-  static UsuarioModel? get usuarioActual => _usuarioActual;
+  static UserModel? get usuarioActual => _usuarioActual;
   static bool get esAdmin => _usuarioActual?.esAdmin ?? false;
 
-  static Future<UsuarioModel?> obtenerUsuarioActual() async {
+  static Future<UserModel?> obtenerUsuarioActual() async {
     if (_usuarioActual != null) return _usuarioActual;
     
     final prefs = await SharedPreferences.getInstance();
@@ -24,7 +24,7 @@ class AuthService {
     if (userData != null) {
       try {
         final jsonMap = jsonDecode(userData);
-        _usuarioActual = UsuarioModel.fromJson(jsonMap);
+        _usuarioActual = UserModel.fromJson(jsonMap);
         return _usuarioActual;
       } catch (e) {
         return null;
@@ -51,7 +51,7 @@ class AuthService {
       if (response.statusCode == 200) {
         final res = jsonDecode(response.body);
         if (res['status'] == 'success') {
-          _usuarioActual = UsuarioModel.fromJson(res['usuario']);
+          _usuarioActual = UserModel.fromJson(res['usuario']);
           
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('user_session', jsonEncode(res['usuario']));

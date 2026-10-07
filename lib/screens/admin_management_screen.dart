@@ -97,7 +97,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   Future<void> _cargarDatos() async {
     setState(() => _isLoading = true);
     try {
-      // Ajusta estos métodos si en tu AuthService tienen otro nombre exacto
       final usuariosRes = await AuthService.obtenerUsuarios();
       final inventariosRes = await AuthService.obtenerInventarios();
 

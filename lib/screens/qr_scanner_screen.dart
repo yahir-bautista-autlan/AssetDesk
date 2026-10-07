@@ -82,8 +82,6 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
               ),
             ),
             const SizedBox(height: 32),
-            
-            // Si es Web, mostramos una alternativa ya que la cámara web requiere configuración avanzada o no soporta el plugin.
             Expanded(
               child: kIsWeb
                   ? Center(
@@ -171,7 +169,6 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
                       ),
                     ),
             ),
-            
             if (!kIsWeb) ...[
               const SizedBox(height: 24),
               Padding(
