@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'inventory_selection_screen.dart';
-import 'admin_management_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -43,21 +42,14 @@ class _LoginScreenState extends State<LoginScreen> {
     if (success) {
       final user = await AuthService.obtenerUsuarioActual();
       if (user != null) {
-        if (user.esAdmin) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const AdminManagementScreen()),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => InventorySelectionScreen(
-                inventariosVinculados: user.inventarios,
-              ),
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => InventorySelectionScreen(
+              inventariosVinculados: user.inventarios,
             ),
-          );
-        }
+          ),
+        );
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(

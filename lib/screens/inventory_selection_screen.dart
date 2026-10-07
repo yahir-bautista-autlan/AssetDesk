@@ -42,11 +42,12 @@ class InventorySelectionScreen extends StatelessWidget {
                         ),
                       ),
                       PopupMenuButton<String>(
-                        offset: const Offset(0, 40),
+                        offset: const Offset(0, 45),
                         padding: EdgeInsets.zero,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
+                        color: const Color(0xFFF3EDF7),
                         icon: const Icon(
                           Icons.account_circle_outlined,
                           color: Colors.black,
@@ -54,7 +55,7 @@ class InventorySelectionScreen extends StatelessWidget {
                         ),
                         onSelected: (value) async {
                           if (value == 'admin') {
-                            Navigator.pushReplacementNamed(context, '/admin');
+                            Navigator.pushNamed(context, '/admin');
                           } else if (value == 'logout') {
                             await AuthService.logout();
                             if (!context.mounted) return;
@@ -65,52 +66,53 @@ class InventorySelectionScreen extends StatelessWidget {
                             );
                           }
                         },
-                        itemBuilder: (BuildContext context) =>
-                            <PopupMenuEntry<String>>[
-                          if (AuthService.esAdmin) ...[
+                        itemBuilder: (BuildContext context) {
+                          final esAdmin = AuthService.esAdmin;
+                          return <PopupMenuEntry<String>>[
+                            if (esAdmin)
+                              const PopupMenuItem<String>(
+                                value: 'admin',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.manage_accounts_outlined,
+                                      color: Colors.black87,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 12),
+                                    Text(
+                                      'Administrar cuentas',
+                                      style: TextStyle(
+                                        color: Colors.black87,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (esAdmin) const PopupMenuDivider(height: 1),
                             const PopupMenuItem<String>(
-                              value: 'admin',
+                              value: 'logout',
                               child: Row(
                                 children: [
                                   Icon(
-                                    Icons.admin_panel_settings_outlined,
-                                    color: primaryPurple,
+                                    Icons.logout,
+                                    color: Color(0xFFB3261E),
                                     size: 20,
                                   ),
                                   SizedBox(width: 12),
                                   Text(
-                                    'Panel de Administración',
+                                    'Cerrar sesión',
                                     style: TextStyle(
-                                      color: primaryPurple,
-                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFFB3261E),
+                                      fontSize: 16,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            const PopupMenuDivider(),
-                          ],
-                          const PopupMenuItem<String>(
-                            value: 'logout',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.logout,
-                                  color: Color(0xFFDC2626),
-                                  size: 20,
-                                ),
-                                SizedBox(width: 12),
-                                Text(
-                                  'Cerrar sesión',
-                                  style: TextStyle(
-                                    color: Color(0xFFDC2626),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                          ];
+                        },
                       ),
                     ],
                   ),
