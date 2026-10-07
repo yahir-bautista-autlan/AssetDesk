@@ -86,21 +86,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       Center(
                         child: Image.asset(
                           'assets/logo_autlan.png',
-                          height: 280, // Logo ampliado para coincidir con el diseño original
+                          height: 180, // Tamaño optimizado y proporcional
                           fit: BoxFit.contain,
                           errorBuilder: (context, error, stackTrace) {
                             return const Column(
                               children: [
                                 Icon(
                                   Icons.change_history_rounded,
-                                  size: 110,
+                                  size: 84,
                                   color: primaryPurple,
                                 ),
-                                SizedBox(height: 12),
+                                SizedBox(height: 10),
                                 Text(
                                   'AUTLAN',
                                   style: TextStyle(
-                                    fontSize: 42,
+                                    fontSize: 34,
                                     fontWeight: FontWeight.w900,
                                     color: Color(0xFF34495E),
                                     letterSpacing: 2.0,
@@ -111,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(height: 40),
+                      const SizedBox(height: 36),
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
