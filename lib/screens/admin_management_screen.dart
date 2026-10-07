@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
+import 'login_screen.dart';
 
 class AdminManagementScreen extends StatefulWidget {
   const AdminManagementScreen({super.key});
@@ -165,10 +166,11 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(nuevo != null
-              ? 'Inventario ${nuevo.id} creado y asignado'
+              ? 'Inventario creado y asignado con éxito'
               : (AuthService.ultimoError.isEmpty
                   ? 'No se pudo crear el inventario'
                   : AuthService.ultimoError)),
+          backgroundColor: nuevo != null ? Colors.green : Colors.redAccent,
         ),
       );
     }
@@ -187,7 +189,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     final esPuestoAdmin = _puestoSeleccionado!.toLowerCase() == 'administrador';
     if (!esPuestoAdmin && _seleccionados.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Agrega al menos un inventario')),
+        const SnackBar(content: Text('Debes asignar al menos un inventario a este rol')),
       );
       return;
     }
@@ -221,6 +223,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
           content: Text(_esModoEdicion
               ? 'Usuario actualizado correctamente'
               : 'Usuario creado exitosamente'),
+          backgroundColor: Colors.green,
         ),
       );
       setState(() {
@@ -234,6 +237,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
           content: Text(AuthService.ultimoError.isEmpty
               ? 'Error al procesar la solicitud.'
               : AuthService.ultimoError),
+          backgroundColor: Colors.redAccent,
         ),
       );
     }
@@ -281,6 +285,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Usuario $nombre eliminado correctamente'),
+          backgroundColor: Colors.green,
         ),
       );
       _cargarDatos();
@@ -290,6 +295,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
           content: Text(AuthService.ultimoError.isEmpty
               ? 'Error al procesar la solicitud'
               : AuthService.ultimoError),
+          backgroundColor: Colors.redAccent,
         ),
       );
       setState(() => _isLoading = false);
@@ -458,18 +464,25 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
           children: [
             Padding(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    _selectedTab == 0
-                        ? 'Usuarios'
-                        : (_esModoEdicion ? 'Editar Usuario' : 'Crear Usuario'),
-                    style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF111827)),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                        color: Color(0xFF111827), size: 24),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      _selectedTab == 0
+                          ? 'Gestión de Usuarios'
+                          : (_esModoEdicion ? 'Editar Usuario' : 'Crear Usuario'),
+                      style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF111827)),
+                    ),
                   ),
                   PopupMenuButton<String>(
                     offset: const Offset(0, 48),
@@ -492,9 +505,9 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                       if (value == 'logout') {
                         await AuthService.logout();
                         if (!context.mounted) return;
-                        Navigator.pushNamedAndRemoveUntil(
+                        Navigator.pushAndRemoveUntil(
                           context,
-                          '/login',
+                          MaterialPageRoute(builder: (_) => const LoginScreen()),
                           (route) => false,
                         );
                       }
@@ -790,14 +803,15 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
           children: [
             _buildFieldLabel('NOMBRE COMPLETO'),
             _buildTextField(_nombreController, 'Ej. Carlos Mendoza',
-                validatorMsg: 'Ingresa el nombre'),
+                validatorMsg: 'Ingresa el nombre completo'),
             const SizedBox(height: 16),
             _buildFieldLabel('CORREO ELECTRÓNICO'),
             _buildTextField(
               _correoController,
               'ejemplo@correo.com',
               keyboardType: TextInputType.emailAddress,
-              validatorMsg: 'Ingresa el correo',
+              validatorMsg: 'Ingresa un correo electrónico',
+              isEmail: true,
               readOnly: _esModoEdicion,
             ),
             const SizedBox(height: 16),
@@ -805,8 +819,9 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
               _buildFieldLabel('CONTRASEÑA'),
               _buildTextField(
                 _passwordController,
-                'Contraseña',
+                'Mínimo 6 caracteres',
                 obscureText: _obscurePassword,
+                isPassword: true,
                 suffixIcon: IconButton(
                   icon: Icon(
                       _obscurePassword
@@ -925,9 +940,9 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
-                      '¿Deseas agregar otro inventario?',
+                      '¿Deseas agregar un inventario nuevo a la base de datos?',
                       style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF166534)),
                     ),
@@ -1046,6 +1061,8 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     Widget? suffixIcon,
     String? validatorMsg,
     bool readOnly = false,
+    bool isEmail = false,
+    bool isPassword = false,
   }) {
     return TextFormField(
       controller: controller,
@@ -1055,6 +1072,14 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       validator: (val) {
         if (validatorMsg != null && (val == null || val.trim().isEmpty)) {
           return validatorMsg;
+        }
+        if (isEmail &&
+            val != null &&
+            !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val)) {
+          return 'Ingresa un formato de correo válido';
+        }
+        if (isPassword && val != null && val.length < 6) {
+          return 'La contraseña debe tener al menos 6 caracteres';
         }
         return null;
       },
@@ -1159,9 +1184,15 @@ class _NuevoInventarioDialogState extends State<_NuevoInventarioDialog> {
     if (_nombre.text.trim().isEmpty || 
         _sheet.text.trim().isEmpty || 
         _responsable.text.trim().isEmpty) {
-      setState(() => _error = 'Nombre, Spreadsheet y Responsable son obligatorios');
+      setState(() => _error = 'Nombre, ID Google Sheet y Responsable son obligatorios');
       return;
     }
+    
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(_responsable.text.trim())) {
+      setState(() => _error = 'El correo del responsable no es válido');
+      return;
+    }
+
     Navigator.pop(context, {
       'nombre': _nombre.text.trim(),
       'sheet': _sheet.text.trim(),
@@ -1183,17 +1214,17 @@ class _NuevoInventarioDialogState extends State<_NuevoInventarioDialog> {
           children: [
             TextField(
               controller: _nombre,
-              decoration: _decoracion('Nombre. Ej. Inventario Planta Tamos'),
+              decoration: _decoracion('Nombre. Ej. Inventario Tamos'),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _sheet,
-              decoration: _decoracion('URL o ID del Google Sheet'),
+              decoration: _decoracion('ID del Google Sheet'),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _ubicacion,
-              decoration: _decoracion('Ubicación. Ej. Tamos'),
+              decoration: _decoracion('Ubicación física'),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -1218,7 +1249,7 @@ class _NuevoInventarioDialogState extends State<_NuevoInventarioDialog> {
         ),
         TextButton(
           onPressed: _guardar,
-          child: const Text('Crear',
+          child: const Text('Crear e ir a asignar',
               style: TextStyle(
                   color: primaryPurple, fontWeight: FontWeight.bold)),
         ),
