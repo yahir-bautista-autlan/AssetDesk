@@ -75,13 +75,10 @@ class _LoginScreenState extends State<LoginScreen> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 500),
+              constraints: const BoxConstraints(maxWidth: 480),
               child: AutofillGroup(
                 child: Form(
                   key: _formKey,
-                  onChanged: () {
-                    // Mantiene el estado del formulario sincronizado para el navegador
-                  },
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -89,21 +86,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       Center(
                         child: Image.asset(
                           'assets/logo_autlan.png',
-                          height: 220, // Logo considerablemente más grande
+                          height: 280, // Logo ampliado para coincidir con el diseño original
                           fit: BoxFit.contain,
                           errorBuilder: (context, error, stackTrace) {
                             return const Column(
                               children: [
                                 Icon(
                                   Icons.change_history_rounded,
-                                  size: 96,
+                                  size: 110,
                                   color: primaryPurple,
                                 ),
                                 SizedBox(height: 12),
                                 Text(
                                   'AUTLAN',
                                   style: TextStyle(
-                                    fontSize: 38,
+                                    fontSize: 42,
                                     fontWeight: FontWeight.w900,
                                     color: Color(0xFF34495E),
                                     letterSpacing: 2.0,
@@ -114,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(height: 48),
+                      const SizedBox(height: 40),
                       Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
