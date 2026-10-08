@@ -171,6 +171,16 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   bool get _esEdicion => widget.existingData != null;
 
+  bool get _requiereAprobacion {
+    final u = AuthService.usuarioCache;
+    if (u == null || !u.esResidente) return false;
+    final inv = widget.inventario;
+    if (inv == null) return true;
+    return !inv.esResponsable(u.correo);
+  }
+
+  bool get _esConsultor => AuthService.usuarioCache?.esConsultor ?? false;
+
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, TextEditingController> _otroControllers = {};
   final Map<String, String?> _selectValues = {};
@@ -494,7 +504,11 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       if (!mounted) return;
 
       if (exito) {
-        if (!_esEdicion && widget.nombrePestana != 'Consumibles') {
+        final quedoPendiente = AuthService.ultimaRespuestaPendiente;
+
+        if (!quedoPendiente &&
+            !_esEdicion &&
+            widget.nombrePestana != 'Consumibles') {
           final nombreActivo = datos['Nombre'] ?? 'Activo sin nombre';
           Navigator.pushReplacement(
             context,
@@ -525,8 +539,98 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     }
   }
 
+  String get _textoBoton {
+    if (_requiereAprobacion) return 'ENVIAR PARA APROBACIÓN';
+    return _esEdicion ? 'GUARDAR CAMBIOS' : 'GUARDAR Y GENERAR QR';
+  }
+
+  Widget _bannerAprobacion() {
+    final responsable = widget.inventario?.responsableEmail ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.hourglass_top_rounded,
+              color: Color(0xFFB45309), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              responsable.isEmpty
+                  ? 'Este cambio no se aplicará de inmediato: se enviará al responsable del inventario para su aprobación.'
+                  : 'Este cambio no se aplicará de inmediato: se enviará a $responsable para su aprobación.',
+              style: const TextStyle(
+                  fontSize: 12.5, color: Color(0xFF92400E), height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _vistaSoloLectura() {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 20, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    icon: const Icon(Icons.arrow_back, color: primaryPurple),
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Solo lectura',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Expanded(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.lock_outline,
+                          size: 52, color: Color(0xFF9CA3AF)),
+                      SizedBox(height: 14),
+                      Text(
+                        'Tu rol de Consultor solo permite ver información y exportar reportes.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 15, color: Colors.black54, height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_esConsultor) return _vistaSoloLectura();
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -567,7 +671,10 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                         constraints: BoxConstraints(maxWidth: contentWidth),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: _buildSeccionesPlanas(columnas),
+                          children: [
+                            if (_requiereAprobacion) _bannerAprobacion(),
+                            ..._buildSeccionesPlanas(columnas),
+                          ],
                         ),
                       ),
                     ),
@@ -841,10 +948,12 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                   color: Colors.transparent,
                   child: Ink(
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
+                      gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Color(0xFF6B3F96), primaryPurple],
+                        colors: _requiereAprobacion
+                            ? const [Color(0xFFF59E0B), Color(0xFFD97706)]
+                            : const [Color(0xFF6B3F96), primaryPurple],
                       ),
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -862,9 +971,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                                     color: Colors.white, strokeWidth: 2),
                               )
                             : Text(
-                                _esEdicion
-                                    ? 'GUARDAR CAMBIOS'
-                                    : 'GUARDAR Y GENERAR QR',
+                                _textoBoton,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,

@@ -10,11 +10,28 @@ import 'package:share_plus/share_plus.dart';
 import 'package:universal_html/html.dart' as html;
 
 import '../models/inventory_model.dart';
+import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import 'add_asset_screen.dart';
+import 'inventory_selection_screen.dart';
 import 'qr_scanner_screen.dart';
 import 'qr_view_screen.dart';
 import 'responsiva_preview_screen.dart';
+
+bool _avisarSiPendiente(BuildContext context) {
+  if (!AuthService.ultimaRespuestaPendiente) return false;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(AuthService.ultimoMensaje.isEmpty
+          ? 'Tu cambio fue enviado al responsable del inventario para su aprobación.'
+          : AuthService.ultimoMensaje),
+      backgroundColor: const Color(0xFFF59E0B),
+      duration: const Duration(seconds: 6),
+      behavior: SnackBarBehavior.floating,
+    ),
+  );
+  return true;
+}
 
 class InventoryDashboardScreen extends StatefulWidget {
   final InventoryModel? inventario;
@@ -47,16 +64,27 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   Map<String, dynamic> _datosHojas = {};
   final Set<String> _bajasEnCarga = {};
   InventoryModel? _inventarioActivo;
+  UserModel? _user;
+  int _pendientes = 0;
 
   late final Listenable _headerListenable =
       Listenable.merge([_tabIndex, _filtroEstado]);
   late final Listenable _tableListenable = Listenable.merge(
       [_tabIndex, _searchQuery, _filtroEstado, _columnasPorPestana]);
 
+  bool get _puedeEditar => _user?.puedeEditar ?? AuthService.puedeEditar;
+
+  bool get _puedeAprobar {
+    final u = _user;
+    if (u == null) return false;
+    return u.esAdmin || u.inventarios.any((i) => i.esResponsable(u.correo));
+  }
+
   @override
   void initState() {
     super.initState();
     _inventarioActivo = widget.inventario;
+    _cargarUsuario();
     _cargarDatosRemotos();
   }
 
@@ -69,6 +97,59 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     _filtroEstado.dispose();
     _columnasPorPestana.dispose();
     super.dispose();
+  }
+
+  Future<void> _cargarUsuario() async {
+    final u = await AuthService.obtenerUsuarioActual();
+    if (!mounted) return;
+    setState(() => _user = u);
+    if (_puedeAprobar) _cargarPendientes();
+  }
+
+  Future<void> _cargarPendientes() async {
+    final lista = await AuthService.obtenerSolicitudesPendientes();
+    if (!mounted) return;
+    setState(() => _pendientes = lista.length);
+  }
+
+  Future<void> _abrirSolicitudes() async {
+    final cambios = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const SolicitudesPendientesScreen()),
+    );
+    if (!mounted) return;
+    if (cambios == true) _cargarDatosRemotos();
+    _cargarPendientes();
+  }
+
+  Future<void> _abrirCambioPassword() async {
+    final u = _user;
+    if (u == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => CambiarPasswordDialog(correo: u.correo),
+    );
+    if (ok == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Contraseña actualizada correctamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  Future<void> _cerrarSesion() async {
+    await AuthService.logout();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  }
+
+  void _trasCambio() {
+    if (mounted) _avisarSiPendiente(context);
+    _cargarDatosRemotos();
+    if (_puedeAprobar) _cargarPendientes();
   }
 
   String _dataKeyFor(String nombrePestana, String filtro) {
@@ -101,6 +182,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     final List<dynamic> rows = List<dynamic>.from(data['rows'] ?? []);
     final List<dynamic> rawOriginalHeaders = List<dynamic>.from(rawHeaders);
 
+    final resultRows = <dynamic>[];
     for (var row in rows) {
       if (row is Map) {
         final Map<String, dynamic> rowMap = Map<String, dynamic>.from(row);
@@ -121,12 +203,13 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
             }
           }
         }
-        row.clear();
-        row.addAll(rowMap);
+        resultRows.add(rowMap);
+      } else {
+        resultRows.add(row);
       }
     }
 
-    return {'headers': uniqueHeaders, 'rows': rows};
+    return {'headers': uniqueHeaders, 'rows': resultRows};
   }
 
   Future<void> _asegurarBajasCargadas(String nombrePestana) async {
@@ -224,7 +307,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       for (var row in rows) {
         final Map<String, dynamic> fila = Map<String, dynamic>.from(row);
         final String currentSN = fila[snKey]?.toString().trim() ?? '';
-        
+
         if (currentSN.toLowerCase() == scannedSN.toLowerCase().trim()) {
           pestanaEncontrada = pestana;
           activoEncontrado = fila;
@@ -272,6 +355,15 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       _isLoading = false;
     });
     _columnasPorPestana.value = columnasIniciales;
+
+    if (resultado.isEmpty && AuthService.ultimoError.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AuthService.ultimoError),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   void _onSearchChanged(String val) {
@@ -533,8 +625,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
         headers: mainHeaders,
         existingRows: mainRows,
         inventario: _inventarioActivo,
-        onBajaExitosa: _cargarDatosRemotos,
-        onEditExitosa: _cargarDatosRemotos,
+        puedeEditar: _puedeEditar,
+        onBajaExitosa: _trasCambio,
+        onEditExitosa: _trasCambio,
       ),
     );
   }
@@ -563,8 +656,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       ),
     );
 
-    if (creado == true) {
-      _cargarDatosRemotos();
+    if (creado == true && mounted) {
+      _trasCambio();
     }
   }
 
@@ -633,6 +726,173 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     );
   }
 
+  Widget _avatar() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        const Icon(Icons.account_circle_outlined, color: Colors.black, size: 34),
+        if (_pendientes > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDC2626),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+              constraints: const BoxConstraints(minWidth: 18),
+              child: Text(
+                _pendientes > 99 ? '99+' : '$_pendientes',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  List<PopupMenuEntry<String>> _itemsMenu() {
+    final u = _user;
+    final items = <PopupMenuEntry<String>>[];
+
+    if (u != null) {
+      items.add(
+        PopupMenuItem<String>(
+          enabled: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                u.nombre,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                u.correo,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: lightPurpleBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  u.rolLabel,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: primaryPurple,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      items.add(const PopupMenuDivider(height: 1));
+    }
+
+    if (u != null && u.esAdmin) {
+      items.add(
+        const PopupMenuItem<String>(
+          value: 'admin',
+          child: Row(
+            children: [
+              Icon(Icons.manage_accounts_outlined,
+                  color: Colors.black87, size: 20),
+              SizedBox(width: 12),
+              Text('Administrar cuentas',
+                  style: TextStyle(color: Colors.black87, fontSize: 15)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_puedeAprobar) {
+      items.add(
+        PopupMenuItem<String>(
+          value: 'solicitudes',
+          child: Row(
+            children: [
+              const Icon(Icons.rule_folder_outlined,
+                  color: Colors.black87, size: 20),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text('Solicitudes pendientes',
+                    style: TextStyle(color: Colors.black87, fontSize: 15)),
+              ),
+              if (_pendientes > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$_pendientes',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    items.add(
+      const PopupMenuItem<String>(
+        value: 'password',
+        child: Row(
+          children: [
+            Icon(Icons.lock_reset_outlined, color: Colors.black87, size: 20),
+            SizedBox(width: 12),
+            Text('Cambiar mi contraseña',
+                style: TextStyle(color: Colors.black87, fontSize: 15)),
+          ],
+        ),
+      ),
+    );
+
+    items.add(const PopupMenuDivider(height: 1));
+
+    items.add(
+      const PopupMenuItem<String>(
+        value: 'logout',
+        child: Row(
+          children: [
+            Icon(Icons.logout, color: Color(0xFFDC2626), size: 20),
+            SizedBox(width: 12),
+            Text('Cerrar sesión',
+                style: TextStyle(
+                    color: Color(0xFFDC2626), fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+
+    return items;
+  }
+
   Widget _buildHeaderArea() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -657,69 +917,44 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
               PopupMenuButton<String>(
                 offset: const Offset(0, 40),
                 padding: EdgeInsets.zero,
+                color: const Color(0xFFF3EDF7),
                 shape:
                     RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                icon: const Icon(Icons.account_circle_outlined,
-                    color: Colors.black, size: 34),
-                onSelected: (value) async {
-                  if (value == 'admin') {
-                    Navigator.pushNamed(context, '/admin');
-                  } else if (value == 'logout') {
-                    await AuthService.logout();
-                    if (!context.mounted) return;
-                    Navigator.pushNamedAndRemoveUntil(
-                        context, '/login', (route) => false);
+                icon: _avatar(),
+                onOpened: () {
+                  if (_user == null) _cargarUsuario();
+                },
+                onSelected: (value) {
+                  switch (value) {
+                    case 'admin':
+                      Navigator.pushNamed(context, '/admin');
+                      break;
+                    case 'solicitudes':
+                      _abrirSolicitudes();
+                      break;
+                    case 'password':
+                      _abrirCambioPassword();
+                      break;
+                    case 'logout':
+                      _cerrarSesion();
+                      break;
                   }
                 },
-                itemBuilder: (BuildContext context) =>
-                    <PopupMenuEntry<String>>[
-                  if (AuthService.esAdmin) ...[
-                    const PopupMenuItem<String>(
-                      value: 'admin',
-                      child: Row(
-                        children: [
-                          Icon(Icons.admin_panel_settings_outlined, color: primaryPurple, size: 20),
-                          SizedBox(width: 12),
-                          Text(
-                            'Panel de Administración',
-                            style: TextStyle(
-                              color: primaryPurple,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuDivider(),
-                  ],
-                  const PopupMenuItem<String>(
-                    value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout, color: Color(0xFFDC2626), size: 20),
-                        SizedBox(width: 12),
-                        Text(
-                          'Cerrar sesión',
-                          style: TextStyle(
-                            color: Color(0xFFDC2626),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                itemBuilder: (_) => _itemsMenu(),
               ),
             ],
           ),
           Row(
             children: [
-              Text(
-                _inventarioActivo?.nombre ?? 'Inventario',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+              Flexible(
+                child: Text(
+                  _inventarioActivo?.nombre ?? 'Inventario',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
                 ),
               ),
               const Text(' - ', style: TextStyle(color: Colors.black54)),
@@ -731,6 +966,25 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                   color: _isLoading ? Colors.orange : const Color(0xFF16A34A),
                 ),
               ),
+              if (_user != null && _user!.esConsultor) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Solo lectura',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 14),
@@ -778,100 +1032,109 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
               final mainHeaders = List<String>.from(mainData['headers'] ?? []);
               final mainRows = List<dynamic>.from(mainData['rows'] ?? []);
 
-              return Row(
-                children: [
-                  OutlinedButton(
-                    onPressed: () =>
-                        _mostrarSelectorColumnas(allHeaders, dataKey),
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      side: const BorderSide(color: Color(0xFFE5E7EB)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    OutlinedButton(
+                      onPressed: () =>
+                          _mostrarSelectorColumnas(allHeaders, dataKey),
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        side: const BorderSide(color: Color(0xFFE5E7EB)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.tune, color: Colors.black87, size: 18),
+                          SizedBox(width: 6),
+                          Text('Columnas',
+                              style: TextStyle(
+                                  color: Colors.black87,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
                     ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.tune, color: Colors.black87, size: 18),
-                        SizedBox(width: 6),
-                        Text('Columnas',
-                            style: TextStyle(
-                                color: Colors.black87,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(
-                    onPressed: () {
-                      final (activeHeaders, filteredRows) = _obtenerDatosVisibles();
-                      
-                      if (activeHeaders.isEmpty || filteredRows.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('No hay datos visibles para exportar.')),
-                        );
-                        return;
-                      }
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: () {
+                        final (activeHeaders, filteredRows) =
+                            _obtenerDatosVisibles();
 
-                      showDialog(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (context) => _ExportarDialog(
-                          nombrePestana: nombrePestana,
-                          headers: activeHeaders,
-                          rows: filteredRows,
-                        ),
-                      );
-                    },
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      side: const BorderSide(color: Color(0xFFE5E7EB)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.cloud_download_outlined,
-                            color: Colors.black87, size: 18),
-                        SizedBox(width: 6),
-                        Text('Exportar',
-                            style: TextStyle(color: Colors.black87, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  CupertinoButton.filled(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 6),
-                    minSize: 0,
-                    borderRadius: BorderRadius.circular(12),
-                    pressedOpacity: 0.7,
-                    onPressed: () => _abrirFormularioAgregar(
-                        nombrePestana, mainHeaders, mainRows),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(CupertinoIcons.add,
-                            color: CupertinoColors.white, size: 16),
-                        SizedBox(width: 4),
-                        Text(
-                          'Agregar',
-                          style: TextStyle(
-                            color: CupertinoColors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            letterSpacing: -0.4,
+                        if (activeHeaders.isEmpty || filteredRows.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content:
+                                    Text('No hay datos visibles para exportar.')),
+                          );
+                          return;
+                        }
+
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (context) => _ExportarDialog(
+                            nombrePestana: nombrePestana,
+                            headers: activeHeaders,
+                            rows: filteredRows,
+                            correo: _user?.correo ?? AuthService.actorEmailSync,
                           ),
-                        ),
-                      ],
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        side: const BorderSide(color: Color(0xFFE5E7EB)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.cloud_download_outlined,
+                              color: Colors.black87, size: 18),
+                          SizedBox(width: 6),
+                          Text('Exportar',
+                              style: TextStyle(
+                                  color: Colors.black87, fontSize: 13)),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    if (_puedeEditar) ...[
+                      const SizedBox(width: 8),
+                      CupertinoButton.filled(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 6),
+                        minSize: 0,
+                        borderRadius: BorderRadius.circular(12),
+                        pressedOpacity: 0.7,
+                        onPressed: () => _abrirFormularioAgregar(
+                            nombrePestana, mainHeaders, mainRows),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.add,
+                                color: CupertinoColors.white, size: 16),
+                            SizedBox(width: 4),
+                            Text(
+                              'Agregar',
+                              style: TextStyle(
+                                color: CupertinoColors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                letterSpacing: -0.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               );
             },
           ),
@@ -973,24 +1236,24 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                   child: Row(
                     children: headers
                         .map((h) => SizedBox(
-                            width: _colWidth,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  h,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    color: Color(0xFF6B7280),
+                              width: _colWidth,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    h,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: Color(0xFF6B7280),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ))
+                            ))
                         .toList(),
                   ),
                 ),
@@ -1033,8 +1296,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                                               horizontal: 12),
                                           child: Align(
                                             alignment: Alignment.centerLeft,
-                                            child:
-                                                _buildCellContent(h, valor),
+                                            child: _buildCellContent(h, valor),
                                           ),
                                         ),
                                       );
@@ -1123,8 +1385,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                                     }
                                   },
                                   child: Column(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Icon(
                                         icon,
@@ -1326,6 +1587,7 @@ class _DeviceDetailSheet extends StatefulWidget {
   final List<String> headers;
   final List<Map<String, dynamic>> existingRows;
   final InventoryModel? inventario;
+  final bool puedeEditar;
   final VoidCallback onBajaExitosa;
   final VoidCallback onEditExitosa;
 
@@ -1336,6 +1598,7 @@ class _DeviceDetailSheet extends StatefulWidget {
     required this.headers,
     required this.existingRows,
     required this.inventario,
+    required this.puedeEditar,
     required this.onBajaExitosa,
     required this.onEditExitosa,
   });
@@ -1410,13 +1673,16 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     return resultado;
   }
 
-  Future<void> _mostrarConfirmacionBaja(BuildContext sheetContext) async {
+  Future<void> _mostrarConfirmacionBaja() async {
+    final esConsumible = widget.nombrePestana == 'Consumibles';
+
     final motivoElegido = await showDialog<String>(
-      context: sheetContext,
+      context: context,
       barrierDismissible: false,
       builder: (dialogContext) => _ConfirmarBajaDialog(
         titulo: _titulo(),
         nombreSeccionBajas: _mapaNombreBajas[widget.nombrePestana] ?? 'Bajas',
+        esConsumible: esConsumible,
         onConfirmar: (motivo) {
           final sn = _valor(_config.snKey);
           return AuthService.darDeBaja(
@@ -1432,24 +1698,28 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     if (motivoElegido == null) return;
     if (!mounted) return;
 
-    await showDialog(
-      context: sheetContext,
-      barrierDismissible: false,
-      builder: (dialogContext) => _BajaExitosaDialog(
-        titulo: _titulo(),
-        nombreSeccionBajas: _mapaNombreBajas[widget.nombrePestana] ?? 'Bajas',
-        motivo: motivoElegido,
-      ),
-    );
+    final pendiente = AuthService.ultimaRespuestaPendiente;
+
+    if (!pendiente) {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => _BajaExitosaDialog(
+          titulo: _titulo(),
+          nombreSeccionBajas: _mapaNombreBajas[widget.nombrePestana] ?? 'Bajas',
+          motivo: motivoElegido,
+        ),
+      );
+    }
 
     if (!mounted) return;
     Navigator.pop(context);
     widget.onBajaExitosa();
   }
 
-  Future<void> _abrirEdicion(BuildContext sheetContext) async {
+  Future<void> _abrirEdicion() async {
     final editado = await Navigator.push<bool>(
-      sheetContext,
+      context,
       MaterialPageRoute(
         builder: (_) => AddAssetScreen(
           nombrePestana: widget.nombrePestana,
@@ -1467,7 +1737,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     }
   }
 
-  Future<void> _mostrarDialogoAsignar(BuildContext context) async {
+  Future<void> _mostrarDialogoAsignar() async {
     final TextEditingController deptoController = TextEditingController(
       text: _valor('Departamento'),
     );
@@ -1477,7 +1747,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setStateDialog) {
+          builder: (_, setStateDialog) {
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: const Text('Asignar Consumible',
@@ -1509,7 +1779,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                       : () async {
                           setStateDialog(() => guardandoAsignacion = true);
                           final nuevoDepto = deptoController.text.trim();
-                          
+
                           final datosActualizados = Map<String, String>.from(
                             widget.fila.map((k, v) => MapEntry(k, v.toString())),
                           );
@@ -1528,12 +1798,18 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                           if (!dialogContext.mounted) return;
                           Navigator.pop(dialogContext);
 
+                          if (!mounted) return;
                           if (exito) {
                             Navigator.pop(context);
                             widget.onEditExitosa();
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Error al asignar el consumible')),
+                              SnackBar(
+                                content: Text(AuthService.ultimoError.isEmpty
+                                    ? 'Error al asignar el consumible'
+                                    : AuthService.ultimoError),
+                                backgroundColor: Colors.redAccent,
+                              ),
                             );
                           }
                         },
@@ -1547,6 +1823,8 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
         );
       },
     );
+
+    deptoController.dispose();
   }
 
   @override
@@ -1554,6 +1832,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     final secciones = _seccionesConDatos();
     final activo = _esActivo();
     final esConsumible = widget.nombrePestana == 'Consumibles';
+    final acciones = _buildAcciones(esConsumible);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.94,
@@ -1695,6 +1974,19 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             ],
                           ),
                         ),
+                        if (_valor(_config.snKey).isNotEmpty && !esConsumible) ...[
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
+                              'SN: ${_valor(_config.snKey)}',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF6B7280),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1711,39 +2003,11 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                           )
                         : ListView.builder(
                             controller: scrollController,
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                            padding: EdgeInsets.fromLTRB(
+                                16, 12, 16, acciones.isEmpty ? 24 : 100),
                             itemCount: secciones.length,
                             itemBuilder: (context, index) {
                               final seccion = secciones[index];
-                              
-                              if (esConsumible) {
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFAFAFC),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                        color: const Color(0xFFEDEDF2)),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        seccion.titulo,
-                                        style: const TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.bold,
-                                          color: primaryPurple,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      _buildCamposGrid(seccion.campos),
-                                    ],
-                                  ),
-                                );
-                              }
 
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 10),
@@ -1760,10 +2024,14 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                                     children: [
                                       Text(
                                         seccion.titulo,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 15,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.black87,
+                                          fontWeight: esConsumible
+                                              ? FontWeight.bold
+                                              : FontWeight.w600,
+                                          color: esConsumible
+                                              ? primaryPurple
+                                              : Colors.black87,
                                         ),
                                       ),
                                       const SizedBox(height: 12),
@@ -1777,12 +2045,13 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                   ),
                 ],
               ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _buildBottomActions(context, esConsumible),
-              ),
+              if (acciones.isNotEmpty)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _buildBottomActions(acciones),
+                ),
             ],
           ),
         );
@@ -1840,102 +2109,115 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     );
   }
 
-  Widget _buildBottomActions(BuildContext sheetContext, bool esConsumible) {
+  List<Widget> _buildAcciones(bool esConsumible) {
+    final acciones = <Widget>[];
+
+    if (widget.puedeEditar &&
+        esConsumible &&
+        _valor('Estatus').toLowerCase() == 'stock') {
+      acciones.add(
+        ElevatedButton.icon(
+          onPressed: _mostrarDialogoAsignar,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF16A34A),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24)),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          icon: const Icon(Icons.assignment_ind_outlined, size: 18),
+          label: const Text('Asignar',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        ),
+      );
+    }
+
+    if (!esConsumible) {
+      acciones.add(
+        OutlinedButton.icon(
+          onPressed: () {
+            final serialNumber = _valor(_config.snKey);
+            final serialFinal =
+                serialNumber.isNotEmpty ? serialNumber : 'NA-00000000';
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => QrViewScreen(
+                  serialNumber: serialFinal,
+                  nombreActivo: _titulo(),
+                ),
+              ),
+            );
+          },
+          style: OutlinedButton.styleFrom(
+            foregroundColor: primaryPurple,
+            side: const BorderSide(color: primaryPurple),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24)),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          icon: const Icon(Icons.qr_code_rounded, size: 18),
+          label: const Text('Ver QR',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        ),
+      );
+    }
+
+    if (widget.puedeEditar) {
+      acciones.add(
+        ElevatedButton.icon(
+          onPressed: _abrirEdicion,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: primaryPurple,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24)),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          icon: const Icon(Icons.edit_outlined, size: 18),
+          label: const Text('Editar',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        ),
+      );
+
+      acciones.add(
+        OutlinedButton.icon(
+          onPressed: _mostrarConfirmacionBaja,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFFDC2626),
+            side: const BorderSide(color: Color(0xFFF3D6D6)),
+            backgroundColor: const Color(0xFFFEF2F2),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24)),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          icon: const Icon(Icons.remove_circle_outline, size: 18),
+          label: const Text('Baja',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        ),
+      );
+    }
+
+    return acciones;
+  }
+
+  Widget _buildBottomActions(List<Widget> acciones) {
+    final hijos = <Widget>[];
+    for (var i = 0; i < acciones.length; i++) {
+      if (i > 0) hijos.add(const SizedBox(width: 10));
+      hijos.add(Expanded(child: acciones[i]));
+    }
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFF0F0F3))),
       ),
-      child: Row(
-        children: [
-          if (esConsumible && _valor('Estatus').toLowerCase() == 'stock') ...[
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () => _mostrarDialogoAsignar(sheetContext),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF16A34A),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                icon: const Icon(Icons.assignment_ind_outlined, size: 18),
-                label: const Text('Asignar',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-              ),
-            ),
-            const SizedBox(width: 10),
-          ],
-          if (!esConsumible) ...[
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  final snKey = _config.snKey;
-                  final serialNumber = _valor(snKey);
-                  final serialFinal = serialNumber.isNotEmpty ? serialNumber : 'NA-00000000';
-                  final nombre = _titulo();
-
-                  Navigator.push(
-                    sheetContext,
-                    MaterialPageRoute(
-                      builder: (_) => QrViewScreen(
-                        serialNumber: serialFinal,
-                        nombreActivo: nombre,
-                      ),
-                    ),
-                  );
-                },
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: primaryPurple,
-                  side: const BorderSide(color: primaryPurple),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                icon: const Icon(Icons.qr_code_rounded, size: 18),
-                label: const Text('Ver QR',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-              ),
-            ),
-            const SizedBox(width: 10),
-          ],
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () => _abrirEdicion(sheetContext),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryPurple,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text('Editar',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => _mostrarConfirmacionBaja(sheetContext),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFDC2626),
-                side: const BorderSide(color: Color(0xFFF3D6D6)),
-                backgroundColor: const Color(0xFFFEF2F2),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              icon: const Icon(Icons.remove_circle_outline, size: 18),
-              label: const Text('Baja',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-            ),
-          ),
-        ],
-      ),
+      child: Row(children: hijos),
     );
   }
 }
@@ -1943,11 +2225,13 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
 class _ConfirmarBajaDialog extends StatefulWidget {
   final String titulo;
   final String nombreSeccionBajas;
+  final bool esConsumible;
   final Future<bool> Function(String motivo) onConfirmar;
 
   const _ConfirmarBajaDialog({
     required this.titulo,
     required this.nombreSeccionBajas,
+    required this.esConsumible,
     required this.onConfirmar,
   });
 
@@ -1957,16 +2241,34 @@ class _ConfirmarBajaDialog extends StatefulWidget {
 
 class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
   static const primaryPurple = Color(0xFF532E7C);
-  static const List<String> _motivos = [
+
+  static const List<String> _motivosEquipo = [
+    'Fin de vida útil / Obsolescencia tecnológica',
+    'Fin de arrendamiento',
+    'Robo o extravío',
+    'Falla de hardware irreparable',
+    'Venta o donación',
+    'Otro',
+  ];
+
+  static const List<String> _motivosConsumible = [
     'Consumible agotado / Vencido',
     'Merma o daño',
     'Otro',
   ];
 
-  String _motivoSeleccionado = _motivos.first;
+  late final List<String> _motivos;
+  late String _motivoSeleccionado;
   final TextEditingController _otroController = TextEditingController();
   bool _cargando = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _motivos = widget.esConsumible ? _motivosConsumible : _motivosEquipo;
+    _motivoSeleccionado = _motivos.first;
+  }
 
   @override
   void dispose() {
@@ -2016,109 +2318,82 @@ class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
         ),
         child: SingleChildScrollView(
           child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: const BoxDecoration(
-                    color: Color(0xFFFEE2E2), shape: BoxShape.circle),
-                child: const Icon(Icons.delete_outline_rounded,
-                    color: Color(0xFFDC2626), size: 28),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '¿Dar de baja el elemento?',
-                style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              RichText(
-                textAlign: TextAlign.center,
-                text: TextSpan(
-                  style: const TextStyle(
-                      fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
-                  children: [
-                    const TextSpan(text: 'El registro '),
-                    TextSpan(
-                      text: widget.titulo,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, color: Colors.black87),
-                    ),
-                    const TextSpan(
-                        text: ' se moverá a la sección '),
-                    TextSpan(
-                      text: '"${widget.nombreSeccionBajas}"',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFFDC2626)),
-                    ),
-                    const TextSpan(text: '.'),
-                  ],
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                      color: Color(0xFFFEE2E2), shape: BoxShape.circle),
+                  child: const Icon(Icons.delete_outline_rounded,
+                      color: Color(0xFFDC2626), size: 28),
                 ),
-              ),
-              const SizedBox(height: 18),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Motivo de la baja',
+                const SizedBox(height: 16),
+                const Text(
+                  '¿Dar de baja el elemento?',
                   style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF6B7280)),
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                initialValue: _motivoSeleccionado,
-                isExpanded: true,
-                items: _motivos
-                    .map((m) => DropdownMenuItem(
-                          value: m,
-                          child: Text(m,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 13)),
-                        ))
-                    .toList(),
-                onChanged: _cargando
-                    ? null
-                    : (v) {
-                        if (v != null) {
-                          setState(() => _motivoSeleccionado = v);
-                        }
-                      },
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: const Color(0xFFF9FAFB),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: primaryPurple, width: 1.5),
+                const SizedBox(height: 8),
+                RichText(
+                  textAlign: TextAlign.center,
+                  text: TextSpan(
+                    style: const TextStyle(
+                        fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
+                    children: [
+                      const TextSpan(text: 'El registro '),
+                      TextSpan(
+                        text: widget.titulo,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, color: Colors.black87),
+                      ),
+                      const TextSpan(text: ' se moverá a la sección '),
+                      TextSpan(
+                        text: '"${widget.nombreSeccionBajas}"',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFDC2626)),
+                      ),
+                      const TextSpan(text: '.'),
+                    ],
                   ),
                 ),
-              ),
-              if (_motivoSeleccionado == 'Otro') ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _otroController,
-                  maxLines: 2,
+                const SizedBox(height: 18),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Motivo de la baja',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6B7280)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  initialValue: _motivoSeleccionado,
+                  isExpanded: true,
+                  items: _motivos
+                      .map((m) => DropdownMenuItem(
+                            value: m,
+                            child: Text(m,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13)),
+                          ))
+                      .toList(),
+                  onChanged: _cargando
+                      ? null
+                      : (v) {
+                          if (v != null) {
+                            setState(() => _motivoSeleccionado = v);
+                          }
+                        },
                   decoration: InputDecoration(
-                    hintText: 'Especifique el motivo o comentario detallado...',
-                    hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
                     filled: true,
                     fillColor: const Color(0xFFF9FAFB),
                     contentPadding:
@@ -2133,68 +2408,98 @@ class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: primaryPurple, width: 1.5),
+                      borderSide:
+                          const BorderSide(color: primaryPurple, width: 1.5),
                     ),
                   ),
                 ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  _error!,
-                  style: const TextStyle(color: Color(0xFFDC2626), fontSize: 12),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed:
-                          _cargando ? null : () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Color(0xFFE5E7EB)),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24)),
-                        padding: const EdgeInsets.symmetric(vertical: 13),
+                if (_motivoSeleccionado == 'Otro') ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _otroController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: 'Especifique el motivo o comentario detallado...',
+                      hintStyle: const TextStyle(
+                          fontSize: 12, color: Color(0xFF9CA3AF)),
+                      filled: true,
+                      fillColor: const Color(0xFFF9FAFB),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
                       ),
-                      child: const Text('Cancelar',
-                          style: TextStyle(
-                              color: Colors.black87,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13)),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _cargando ? null : _confirmar,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFDC2626),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24)),
-                        padding: const EdgeInsets.symmetric(vertical: 13),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
                       ),
-                      child: _cargando
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Text('Sí, dar de baja',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13)),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide:
+                            const BorderSide(color: primaryPurple, width: 1.5),
+                      ),
                     ),
                   ),
                 ],
-              ),
-            ],
-          ),
+                if (_error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _error!,
+                    style:
+                        const TextStyle(color: Color(0xFFDC2626), fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed:
+                            _cargando ? null : () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFE5E7EB)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24)),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                        ),
+                        child: const Text('Cancelar',
+                            style: TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _cargando ? null : _confirmar,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFDC2626),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24)),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                        ),
+                        child: _cargando
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Text('Sí, dar de baja',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2278,8 +2583,7 @@ class _BajaExitosaDialog extends StatelessWidget {
                         fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
                   const TextSpan(
-                      text:
-                          ' ha sido removido y se movió a la sección '),
+                      text: ' ha sido removido y se movió a la sección '),
                   TextSpan(
                     text: '"$nombreSeccionBajas"',
                     style: const TextStyle(
@@ -2321,8 +2625,8 @@ class _BajaExitosaDialog extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF532E7C),
                   elevation: 0,
-                  shape:
-                      RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: const Text('Entendido',
@@ -2343,11 +2647,13 @@ class _ExportarDialog extends StatefulWidget {
   final String nombrePestana;
   final List<String> headers;
   final List<dynamic> rows;
+  final String correo;
 
   const _ExportarDialog({
     required this.nombrePestana,
     required this.headers,
     required this.rows,
+    required this.correo,
   });
 
   @override
@@ -2360,7 +2666,7 @@ class _ExportarDialogState extends State<_ExportarDialog> {
 
   Future<void> _procesarExcel(bool descargar) async {
     setState(() => _isProcessing = true);
-    final excel = Excel.createExcel();    
+    final excel = Excel.createExcel();
     excel.rename('Sheet1', 'Reporte');
     final sheet = excel['Reporte'];
 
@@ -2410,7 +2716,7 @@ class _ExportarDialogState extends State<_ExportarDialog> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const _ExitoExportarDialog(),
+          builder: (context) => _ExitoExportarDialog(correo: widget.correo),
         );
       }
     }
@@ -2418,6 +2724,8 @@ class _ExportarDialogState extends State<_ExportarDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final correo = widget.correo.isEmpty ? 'tu correo registrado' : widget.correo;
+
     return Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -2479,13 +2787,14 @@ class _ExportarDialogState extends State<_ExportarDialog> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFE9E0F2)),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.mail_outline, color: primaryPurple, size: 20),
-                  SizedBox(width: 12),
+                  const Icon(Icons.mail_outline, color: primaryPurple, size: 20),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text('usuario@autlan.com',
-                        style: TextStyle(
+                    child: Text(correo,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
                             color: primaryPurple,
                             fontWeight: FontWeight.w600,
                             fontSize: 14)),
@@ -2564,12 +2873,16 @@ class _ExportarDialogState extends State<_ExportarDialog> {
 }
 
 class _ExitoExportarDialog extends StatelessWidget {
-  const _ExitoExportarDialog();
+  final String correo;
+
+  const _ExitoExportarDialog({required this.correo});
 
   static const primaryPurple = Color(0xFF532E7C);
 
   @override
   Widget build(BuildContext context) {
+    final texto = correo.isEmpty ? 'tu correo registrado' : correo;
+
     return Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -2624,13 +2937,14 @@ class _ExitoExportarDialog extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: primaryPurple),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.mail_outline, color: primaryPurple, size: 20),
-                  SizedBox(width: 12),
+                  const Icon(Icons.mail_outline, color: primaryPurple, size: 20),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: Text('usuario@autlan.com',
-                        style: TextStyle(
+                    child: Text(texto,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
                             color: primaryPurple,
                             fontWeight: FontWeight.w600,
                             fontSize: 14)),

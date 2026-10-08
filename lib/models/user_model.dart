@@ -6,10 +6,8 @@ class UserModel {
   final String domain;
   final String correo;
   final String puesto;
-  final List<InventoryModel> inventarios;
   final String status;
-
-  bool get esAdmin => puesto == 'Administrador';
+  final List<InventoryModel> inventarios;
 
   UserModel({
     required this.idUser,
@@ -17,17 +15,38 @@ class UserModel {
     required this.domain,
     required this.correo,
     required this.puesto,
-    required this.inventarios,
     required this.status,
+    required this.inventarios,
   });
 
-  factory UserModel.fromJson(Map<String, dynamic> json) {
-    var rawInventarios = json['inventarios'];
-    List<InventoryModel> invList = [];
+  bool get esAdmin => puesto.trim().toLowerCase() == 'administrador';
+  bool get esJefeDeArea => puesto.trim().toLowerCase() == 'jefe de area';
+  bool get esResidente => puesto.trim().toLowerCase() == 'residente';
+  bool get esConsultor => puesto.trim().toLowerCase() == 'consultor';
 
-    if (rawInventarios is List) {
-      invList = rawInventarios
-          .map((i) => InventoryModel.fromJson(i))
+  bool get puedeEditar => !esConsultor;
+  bool get puedeGestionarUsuarios => esAdmin;
+  bool get puedeGestionarInventarios => esAdmin;
+
+  String get rolLabel {
+    if (esAdmin) return 'Administrador';
+    if (esJefeDeArea) return 'Jefe de Área';
+    if (esResidente) return 'Residente';
+    if (esConsultor) return 'Consultor';
+    return puesto;
+  }
+
+  bool tieneAccesoA(String inventoryId) {
+    if (esAdmin) return true;
+    return inventarios.any((inv) => inv.id == inventoryId);
+  }
+
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    List<InventoryModel> listaInventarios = [];
+
+    if (json['inventarios'] is List) {
+      listaInventarios = (json['inventarios'] as List)
+          .map((e) => InventoryModel.fromJson(e))
           .toList();
     }
 
@@ -37,8 +56,8 @@ class UserModel {
       domain: json['domain']?.toString() ?? '',
       correo: json['correo']?.toString() ?? '',
       puesto: json['puesto']?.toString() ?? '',
-      inventarios: invList,
       status: json['status']?.toString() ?? 'Activo',
+      inventarios: listaInventarios,
     );
   }
 
@@ -49,8 +68,8 @@ class UserModel {
       'domain': domain,
       'correo': correo,
       'puesto': puesto,
-      'inventarios': inventarios.map((i) => i.toJson()).toList(),
       'status': status,
+      'inventarios': inventarios.map((e) => e.toJson()).toList(),
     };
   }
 }

@@ -9,20 +9,31 @@ class InventoryModel {
   InventoryModel({
     required this.id,
     required this.nombre,
-    required this.responsableEmail,
+    this.responsableEmail = '',
     required this.spreadsheetId,
-    required this.nombreVisible,
-    required this.ubicacion,
+    this.nombreVisible = '',
+    this.ubicacion = '',
   });
 
-  factory InventoryModel.fromJson(Map<String, dynamic> json) {
+  bool esResponsable(String correo) =>
+      responsableEmail.trim().toLowerCase() == correo.trim().toLowerCase();
+
+  factory InventoryModel.fromJson(dynamic json) {
+    if (json is Map) {
+      return InventoryModel(
+        id: json['id']?.toString() ?? '',
+        nombre: json['nombre']?.toString() ?? '',
+        responsableEmail: json['responsableEmail']?.toString() ?? '',
+        spreadsheetId: json['spreadsheetId']?.toString() ?? '',
+        nombreVisible: json['nombreVisible']?.toString() ?? '',
+        ubicacion: json['ubicacion']?.toString() ?? '',
+      );
+    }
+    final s = json?.toString() ?? '';
     return InventoryModel(
-      id: json['id']?.toString() ?? '',
-      nombre: json['nombre']?.toString() ?? '',
-      responsableEmail: json['responsableEmail']?.toString() ?? '',
-      spreadsheetId: json['spreadsheetId']?.toString() ?? '',
-      nombreVisible: json['nombreVisible']?.toString() ?? '',
-      ubicacion: json['ubicacion']?.toString() ?? '',
+      id: s,
+      nombre: s,
+      spreadsheetId: '',
     );
   }
 
