@@ -156,6 +156,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     'Tipo',
   };
 
+  static const Set<String> _camposTamano = {'Disco Duro', 'Memoria'};
+
   static const Map<String, List<String>> _opcionesPorDefecto = {
     'Equipo': ['PC', 'Laptop'],
     'Disco Duro': ['256GB SSD', '512GB SSD', '1TB SSD', '1TB HDD'],
@@ -196,6 +198,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   String _snOriginal = '';
 
   late List<_SeccionCampos> _secciones;
+  final Set<int> _expandidas = {0};
 
   @override
   void initState() {
@@ -252,43 +255,100 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     });
   }
 
+  String _canonico(String header, String valor) {
+    var v = valor.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (v.isEmpty) return v;
+
+    if (_camposTamano.contains(header)) {
+      final m = RegExp(r'^(\d+(?:[.,]\d+)?)\s*(gb|tb|mb)\b\s*(.*)$',
+              caseSensitive: false)
+          .firstMatch(v);
+      if (m != null) {
+        final numero = m.group(1)!;
+        final unidad = m.group(2)!.toUpperCase();
+        final resto = (m.group(3) ?? '').trim();
+        v = resto.isEmpty
+            ? '$numero$unidad'
+            : '$numero$unidad ${resto.toUpperCase()}';
+      }
+    }
+    return v;
+  }
+
+  String _claveComparacion(String valor) {
+    return valor.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+  }
+
+  double _tamanoEnGb(String valor) {
+    final m = RegExp(r'^(\d+(?:[.,]\d+)?)(gb|tb|mb)', caseSensitive: false)
+        .firstMatch(valor.replaceAll(' ', ''));
+    if (m == null) return double.infinity;
+    final n = double.tryParse(m.group(1)!.replaceAll(',', '.')) ?? 0;
+    switch (m.group(2)!.toLowerCase()) {
+      case 'tb':
+        return n * 1024;
+      case 'mb':
+        return n / 1024;
+      default:
+        return n;
+    }
+  }
+
   void _prepararCampos() {
     for (final header in widget.headers) {
       if (header.isEmpty || _camposEstaticos.contains(header)) continue;
 
-      final valorExistente =
+      final valorExistenteCrudo =
           widget.existingData?[header]?.toString().trim() ?? '';
 
       if (_camposSelect.contains(header)) {
-        final distintos = <String>{};
+        final valorExistente = _canonico(header, valorExistenteCrudo);
+        final vistos = <String, String>{};
+
+        void agregar(String crudo) {
+          final c = _canonico(header, crudo);
+          if (c.isEmpty) return;
+          vistos.putIfAbsent(_claveComparacion(c), () => c);
+        }
+
         for (final row in widget.existingRows) {
-          final v = row[header]?.toString().trim();
-          if (v != null && v.isNotEmpty) distintos.add(v);
+          final v = row[header]?.toString();
+          if (v != null) agregar(v);
         }
-        final fallback = _opcionesPorDefecto[header] ?? const [];
-        final combinadas = <String>[...distintos];
-        for (final f in fallback) {
-          if (!combinadas.contains(f)) combinadas.add(f);
+        for (final f in _opcionesPorDefecto[header] ?? const <String>[]) {
+          agregar(f);
         }
-        if (valorExistente.isNotEmpty && !combinadas.contains(valorExistente)) {
-          combinadas.add(valorExistente);
-        }
+        agregar(valorExistente);
+
+        final combinadas = vistos.values.toList();
+
         if (header == 'Estatus') {
           combinadas.sort((a, b) {
             if (a == 'Stock' || a == 'Activo') return -1;
             if (b == 'Stock' || b == 'Activo') return 1;
             return a.compareTo(b);
           });
+        } else if (_camposTamano.contains(header)) {
+          combinadas.sort((a, b) {
+            final cmp = _tamanoEnGb(a).compareTo(_tamanoEnGb(b));
+            return cmp != 0 ? cmp : a.compareTo(b);
+          });
         } else {
-          combinadas.sort();
+          combinadas.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
         }
+
+        String? seleccionado;
+        if (valorExistente.isNotEmpty) {
+          seleccionado = vistos[_claveComparacion(valorExistente)];
+        } else if (combinadas.isNotEmpty) {
+          seleccionado = combinadas.first;
+        }
+
         _opcionesPorCampo[header] = combinadas;
-        _selectValues[header] = valorExistente.isNotEmpty
-            ? valorExistente
-            : (combinadas.isNotEmpty ? combinadas.first : null);
+        _selectValues[header] = seleccionado;
         _otroControllers[header] = TextEditingController();
       } else {
-        _controllers[header] = TextEditingController(text: valorExistente);
+        _controllers[header] = TextEditingController(text: valorExistenteCrudo);
       }
     }
   }
@@ -344,6 +404,15 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       }
     }
     return resultado;
+  }
+
+  void _expandirSeccionDe(String header) {
+    for (var i = 0; i < _secciones.length; i++) {
+      if (_secciones[i].headers.contains(header)) {
+        _expandidas.add(i);
+        return;
+      }
+    }
   }
 
   bool _esCampoFecha(String header) {
@@ -433,7 +502,10 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
     if (widget.headers.contains('Nombre')) {
       final texto = _controllers['Nombre']?.text.trim() ?? '';
-      if (texto.isEmpty) huboError = true;
+      if (texto.isEmpty) {
+        huboError = true;
+        _expandirSeccionDe('Nombre');
+      }
     }
 
     for (final header in _camposSelect) {
@@ -442,17 +514,21 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       if (seleccionado == null) {
         _erroresSelect[header] = 'Selecciona una opción';
         huboError = true;
+        _expandirSeccionDe(header);
       } else if (seleccionado == _otroSentinel) {
         final texto = _otroControllers[header]?.text.trim() ?? '';
         if (texto.isEmpty) {
           _erroresSelect[header] = 'Especifica el valor';
           huboError = true;
+          _expandirSeccionDe(header);
         }
       }
     }
 
     if (huboError) {
-      setState(() {});
+      setState(() {
+        _errorGeneral = 'Completa los campos obligatorios marcados.';
+      });
       return null;
     }
 
@@ -464,7 +540,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       } else if (_camposSelect.contains(header)) {
         final seleccionado = _selectValues[header];
         datos[header] = seleccionado == _otroSentinel
-            ? (_otroControllers[header]?.text.trim() ?? '')
+            ? _canonico(header, _otroControllers[header]?.text ?? '')
             : (seleccionado ?? '');
       } else {
         datos[header] = _controllers[header]?.text.trim() ?? '';
@@ -673,7 +749,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             if (_requiereAprobacion) _bannerAprobacion(),
-                            ..._buildSeccionesPlanas(columnas),
+                            ..._buildSecciones(columnas),
                           ],
                         ),
                       ),
@@ -689,33 +765,73 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     );
   }
 
-  List<Widget> _buildSeccionesPlanas(int columnas) {
+  List<Widget> _buildSecciones(int columnas) {
     final widgets = <Widget>[];
+    final unaSola = _secciones.length == 1;
+
     for (var i = 0; i < _secciones.length; i++) {
       final seccion = _secciones[i];
+      final expandida = unaSola || _expandidas.contains(i);
 
       widgets.add(
         Container(
-          margin: const EdgeInsets.only(bottom: 14),
-          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
             color: const Color(0xFFFAFAFC),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFFEDEDF2)),
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                seccion.titulo,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: primaryPurple,
+              InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: unaSola
+                    ? null
+                    : () {
+                        setState(() {
+                          if (_expandidas.contains(i)) {
+                            _expandidas.remove(i);
+                          } else {
+                            _expandidas.add(i);
+                          }
+                        });
+                      },
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        seccion.titulo,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      if (!unaSola)
+                        AnimatedRotation(
+                          turns: expandida ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 200),
+                          child: const Icon(Icons.keyboard_arrow_down,
+                              color: Color(0xFF6B7280)),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
-              _buildCamposGrid(seccion.headers, columnas),
+              AnimatedCrossFade(
+                duration: const Duration(milliseconds: 200),
+                crossFadeState: expandida
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
+                firstChild: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: _buildCamposGrid(seccion.headers, columnas),
+                ),
+                secondChild: const SizedBox(width: double.infinity),
+              ),
             ],
           ),
         ),

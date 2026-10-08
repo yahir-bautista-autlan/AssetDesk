@@ -172,7 +172,7 @@ class AuthService {
     return null;
   }
 
-    static Future<bool> reenviarInvitacion(String correo) async {
+  static Future<bool> reenviarInvitacion(String correo) async {
     final data = await _post({
       'action': 'reenviarInvitacion',
       'actorEmail': await _actor(),

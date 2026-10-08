@@ -1610,6 +1610,8 @@ class _DeviceDetailSheet extends StatefulWidget {
 class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
   static const primaryPurple = Color(0xFF532E7C);
 
+  final Set<int> _expandidas = {0};
+
   _DetailConfig get _config {
     switch (widget.nombrePestana) {
       case 'Impresoras':
@@ -2009,6 +2011,37 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             itemBuilder: (context, index) {
                               final seccion = secciones[index];
 
+                              if (esConsumible) {
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFAFAFC),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                        color: const Color(0xFFEDEDF2)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        seccion.titulo,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: primaryPurple,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildCamposGrid(seccion.campos),
+                                    ],
+                                  ),
+                                );
+                              }
+
+                              final expandida = _expandidas.contains(index);
+
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 10),
                                 decoration: BoxDecoration(
@@ -2017,27 +2050,62 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                                   border: Border.all(
                                       color: const Color(0xFFEDEDF2)),
                                 ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        seccion.titulo,
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: esConsumible
-                                              ? FontWeight.bold
-                                              : FontWeight.w600,
-                                          color: esConsumible
-                                              ? primaryPurple
-                                              : Colors.black87,
+                                child: Column(
+                                  children: [
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: () {
+                                        setState(() {
+                                          if (expandida) {
+                                            _expandidas.remove(index);
+                                          } else {
+                                            _expandidas.add(index);
+                                          }
+                                        });
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 16, vertical: 14),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              seccion.titulo,
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                            AnimatedRotation(
+                                              turns: expandida ? 0.5 : 0,
+                                              duration: const Duration(
+                                                  milliseconds: 200),
+                                              child: const Icon(
+                                                  Icons.keyboard_arrow_down,
+                                                  color: Color(0xFF6B7280)),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      const SizedBox(height: 12),
-                                      _buildCamposGrid(seccion.campos),
-                                    ],
-                                  ),
+                                    ),
+                                    AnimatedCrossFade(
+                                      duration:
+                                          const Duration(milliseconds: 200),
+                                      crossFadeState: expandida
+                                          ? CrossFadeState.showFirst
+                                          : CrossFadeState.showSecond,
+                                      firstChild: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            16, 0, 16, 16),
+                                        child:
+                                            _buildCamposGrid(seccion.campos),
+                                      ),
+                                      secondChild: const SizedBox(
+                                          width: double.infinity),
+                                    ),
+                                  ],
                                 ),
                               );
                             },
