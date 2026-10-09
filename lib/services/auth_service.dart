@@ -7,6 +7,7 @@ import '../models/inventory_model.dart';
 import '../models/solicitud_model.dart';
 import '../models/user_model.dart';
 
+
 class _CacheEntry {
   final dynamic data;
   final DateTime time;

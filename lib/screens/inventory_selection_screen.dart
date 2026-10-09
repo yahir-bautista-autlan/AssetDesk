@@ -583,17 +583,6 @@ class _SolicitudesPendientesScreenState
     }
   }
 
-  List<MapEntry<String, String>> _detalles(SolicitudModel s) {
-    if (s.actionType == 'baja') {
-      final motivo = s.motivoBaja;
-      return motivo.isEmpty ? [] : [MapEntry('Motivo', motivo)];
-    }
-    return s.payloadMap.entries
-        .map((e) => MapEntry(e.key, e.value?.toString().trim() ?? ''))
-        .where((e) => e.value.isNotEmpty)
-        .toList();
-  }
-
   Future<void> _resolver(SolicitudModel s, bool aprobar) async {
     String comentario = '';
 
@@ -614,7 +603,9 @@ class _SolicitudesPendientesScreenState
           title: const Text('Aprobar solicitud',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           content: Text(
-            'Se aplicará el cambio solicitado por ${s.requestedByName} directamente en el inventario.',
+            s.actionType == 'editar'
+                ? 'Se aplicarán ${s.cambios.length} cambio(s) solicitados por ${s.requestedByName} directamente en el inventario.'
+                : 'Se aplicará el cambio solicitado por ${s.requestedByName} directamente en el inventario.',
             style: const TextStyle(fontSize: 14, color: Colors.black87),
           ),
           actions: [
@@ -648,7 +639,8 @@ class _SolicitudesPendientesScreenState
 
     if (exito) {
       _huboCambios = true;
-      setState(() => _solicitudes.removeWhere((x) => x.requestId == s.requestId));
+      setState(
+          () => _solicitudes.removeWhere((x) => x.requestId == s.requestId));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(aprobar
@@ -737,8 +729,8 @@ class _SolicitudesPendientesScreenState
                                 color: primaryPurple,
                                 onRefresh: _cargar,
                                 child: ListView.builder(
-                                  padding: const EdgeInsets.fromLTRB(
-                                      20, 8, 20, 24),
+                                  padding:
+                                      const EdgeInsets.fromLTRB(20, 8, 20, 24),
                                   itemCount: _solicitudes.length,
                                   itemBuilder: (context, i) =>
                                       _buildTarjeta(_solicitudes[i]),
@@ -754,10 +746,340 @@ class _SolicitudesPendientesScreenState
     );
   }
 
+  Widget _chipResumen(String texto, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        texto,
+        style:
+            TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+      ),
+    );
+  }
+
+  Widget _avisoSinReferencia() {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded,
+              size: 18, color: Color(0xFFB45309)),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'No se encontró el elemento actual en el inventario (pudo haberse modificado o dado de baja). No hay datos anteriores para comparar.',
+              style: TextStyle(
+                  fontSize: 12, color: Color(0xFF92400E), height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filaCambio(CambioCampo c) {
+    final vacioAntes = c.anterior.isEmpty;
+    final vacioAhora = c.nuevo.isEmpty;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.edit_note_rounded,
+                  size: 16, color: Color(0xFFB45309)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  c.campo,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF92400E),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('ANTES',
+                          style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFB91C1C),
+                              letterSpacing: 0.5)),
+                      const SizedBox(height: 2),
+                      Text(
+                        vacioAntes ? '(vacío)' : c.anterior,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: vacioAntes
+                              ? const Color(0xFF9CA3AF)
+                              : const Color(0xFF7F1D1D),
+                          fontStyle:
+                              vacioAntes ? FontStyle.italic : FontStyle.normal,
+                          decoration: vacioAntes
+                              ? TextDecoration.none
+                              : TextDecoration.lineThrough,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 14),
+                child: Icon(Icons.arrow_forward_rounded,
+                    size: 18, color: Color(0xFF6B7280)),
+              ),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('AHORA',
+                          style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF15803D),
+                              letterSpacing: 0.5)),
+                      const SizedBox(height: 2),
+                      Text(
+                        vacioAhora ? '(vacío)' : c.nuevo,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: vacioAhora
+                              ? const Color(0xFF9CA3AF)
+                              : const Color(0xFF14532D),
+                          fontStyle:
+                              vacioAhora ? FontStyle.italic : FontStyle.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filaDato(String clave, String valor, {Color? fondo, Color? texto}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: fondo ?? const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            child: Text(
+              clave,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              valor,
+              style: TextStyle(
+                fontSize: 12,
+                color: texto ?? Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _desplegable(String titulo, List<Widget> hijos) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 8),
+        title: Text(
+          titulo,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: primaryPurple,
+          ),
+        ),
+        children: hijos,
+      ),
+    );
+  }
+
+  List<Widget> _contenidoDetalle(SolicitudModel s) {
+    switch (s.actionType) {
+      case 'editar':
+        {
+          if (!s.referenciaEncontrada) {
+            return [
+              _avisoSinReferencia(),
+              const SizedBox(height: 4),
+              _desplegable(
+                'Ver datos propuestos (${s.camposNuevos.length})',
+                s.camposNuevos.map((e) => _filaDato(e.key, e.value)).toList(),
+              ),
+            ];
+          }
+
+          final cambios = s.cambios;
+          final iguales = s.camposSinCambio;
+
+          return [
+            const SizedBox(height: 10),
+            if (cambios.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'No se detectaron diferencias respecto al inventario actual.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                ),
+              )
+            else
+              ...cambios.map(_filaCambio),
+            if (iguales.isNotEmpty)
+              _desplegable(
+                'Campos sin cambios (${iguales.length})',
+                iguales.map((e) => _filaDato(e.key, e.value)).toList(),
+              ),
+          ];
+        }
+      case 'agregar':
+        {
+          final campos = s.camposNuevos;
+          return [
+            const SizedBox(height: 10),
+            ...campos.map((e) => _filaDato(
+                  e.key,
+                  e.value,
+                  fondo: const Color(0xFFDCFCE7),
+                  texto: const Color(0xFF14532D),
+                )),
+          ];
+        }
+      case 'baja':
+        {
+          final motivo = s.motivoBaja;
+          return [
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('MOTIVO DE LA BAJA',
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFB91C1C),
+                          letterSpacing: 0.5)),
+                  const SizedBox(height: 4),
+                  Text(
+                    motivo.isEmpty ? 'Sin motivo indicado' : motivo,
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF7F1D1D)),
+                  ),
+                ],
+              ),
+            ),
+            if (!s.referenciaEncontrada)
+              _avisoSinReferencia()
+            else
+              _desplegable(
+                'Datos del elemento (${s.camposDelElemento.length})',
+                s.camposDelElemento
+                    .map((e) => _filaDato(e.key, e.value))
+                    .toList(),
+              ),
+          ];
+        }
+      default:
+        return const [];
+    }
+  }
+
   Widget _buildTarjeta(SolicitudModel s) {
     final color = _colorAccion(s.actionType);
-    final detalles = _detalles(s);
     final procesando = _procesando.contains(s.requestId);
+
+    String resumen = '';
+    Color colorResumen = color;
+    if (s.actionType == 'editar' && s.referenciaEncontrada) {
+      final n = s.cambios.length;
+      resumen = n == 0
+          ? 'Sin diferencias'
+          : '$n ${n == 1 ? 'campo modificado' : 'campos modificados'}';
+      colorResumen = n == 0 ? const Color(0xFF6B7280) : const Color(0xFFB45309);
+    } else if (s.actionType == 'agregar') {
+      resumen = '${s.camposNuevos.length} datos nuevos';
+      colorResumen = const Color(0xFF16A34A);
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -803,11 +1125,15 @@ class _SolicitudesPendientesScreenState
                     ],
                   ),
                 ),
+                if (resumen.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  _chipResumen(resumen, colorResumen),
+                ],
                 const Spacer(),
                 Text(
                   s.fechaCorta,
-                  style: const TextStyle(
-                      fontSize: 11, color: Color(0xFF9CA3AF)),
+                  style:
+                      const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
                 ),
               ],
             ),
@@ -840,71 +1166,7 @@ class _SolicitudesPendientesScreenState
                 ),
               ],
             ),
-            if (detalles.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Theme(
-                data: Theme.of(context)
-                    .copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(bottom: 8),
-                  title: Text(
-                    s.actionType == 'baja'
-                        ? 'Ver motivo'
-                        : 'Ver datos del cambio (${detalles.length})',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: primaryPurple,
-                    ),
-                  ),
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9FAFB),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFF0F0F3)),
-                      ),
-                      child: Column(
-                        children: detalles
-                            .map(
-                              (d) => Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 3),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    SizedBox(
-                                      width: 130,
-                                      child: Text(
-                                        d.key,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF6B7280),
-                                        ),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        d.value,
-                                        style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.black87),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ..._contenidoDetalle(s),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -958,7 +1220,6 @@ class _SolicitudesPendientesScreenState
     );
   }
 }
-
 class _ComentarioRechazoDialog extends StatefulWidget {
   const _ComentarioRechazoDialog();
 

@@ -1,10 +1,12 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
@@ -75,8 +77,23 @@ class ResponsivaPreviewScreen extends StatefulWidget {
 }
 
 class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
+  static const double _dpiRaster = 240;
+  static const double _zoomMin = 1;
+  static const double _zoomMax = 6;
+  static const double _alturaBarra = 120;
+
   late ResponsivaExtraData _datos;
   bool _cargandoInicial = true;
+  bool _renderizando = true;
+  String? _errorRender;
+
+  Uint8List? _pdfBytes;
+  List<Uint8List> _paginas = [];
+
+  final TransformationController _zoomCtrl = TransformationController();
+  Offset _posDobleToque = Offset.zero;
+  Size _viewport = Size.zero;
+  int _generacion = 0;
 
   @override
   void initState() {
@@ -87,7 +104,53 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
       nombreRecibe: _valor('Nombre'),
       correoRecibe: '',
     );
-    _cargarResponsableTI();
+    _iniciar();
+  }
+
+  @override
+  void dispose() {
+    _zoomCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _iniciar() async {
+    final user = await AuthService.obtenerUsuarioActual();
+    if (!mounted) return;
+    _datos.nombreResponsableTI = user?.nombre ?? '';
+    _datos.correoResponsableTI =
+        user != null ? _correoDesdeUsuario(user.correo) : '';
+    setState(() => _cargandoInicial = false);
+    await _regenerar();
+  }
+
+  Future<void> _regenerar() async {
+    final miGeneracion = ++_generacion;
+    setState(() {
+      _renderizando = true;
+      _errorRender = null;
+    });
+
+    try {
+      final bytes = await _generarPdf(PdfPageFormat.letter);
+      final paginas = <Uint8List>[];
+      await for (final raster in Printing.raster(bytes, dpi: _dpiRaster)) {
+        paginas.add(await raster.toPng());
+      }
+
+      if (!mounted || miGeneracion != _generacion) return;
+      _zoomCtrl.value = Matrix4.identity();
+      setState(() {
+        _pdfBytes = bytes;
+        _paginas = paginas;
+        _renderizando = false;
+      });
+    } catch (e) {
+      if (!mounted || miGeneracion != _generacion) return;
+      setState(() {
+        _renderizando = false;
+        _errorRender = 'No se pudo generar la vista previa: $e';
+      });
+    }
   }
 
   String _valor(String key) {
@@ -104,6 +167,11 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
       default:
         return 'Numero de Serie';
     }
+  }
+
+  String get _nombreArchivo {
+    final sn = _valor(_snKeyPara(widget.nombrePestana));
+    return 'Responsiva_${sn.isNotEmpty ? sn : 'AXO'}.pdf';
   }
 
   (String marca, String modelo) _separarMarcaModelo() {
@@ -158,17 +226,6 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     return n.isEmpty ? 'AUTLAN' : n.toUpperCase();
   }
 
-  Future<void> _cargarResponsableTI() async {
-    final user = await AuthService.obtenerUsuarioActual();
-    if (!mounted) return;
-    setState(() {
-      _datos.nombreResponsableTI = user?.nombre ?? '';
-      _datos.correoResponsableTI =
-          user != null ? _correoDesdeUsuario(user.correo) : '';
-      _cargandoInicial = false;
-    });
-  }
-
   Future<void> _abrirFormularioCompletar() async {
     final resultado = await Navigator.push<ResponsivaExtraData>(
       context,
@@ -181,7 +238,69 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     );
 
     if (resultado != null && mounted) {
-      setState(() => _datos = resultado);
+      _datos = resultado;
+      await _regenerar();
+    }
+  }
+
+  Future<void> _descargar() async {
+    final bytes = _pdfBytes;
+    if (bytes == null) return;
+    await Printing.sharePdf(bytes: bytes, filename: _nombreArchivo);
+  }
+
+  Future<void> _compartir() async {
+    final bytes = _pdfBytes;
+    if (bytes == null) return;
+
+    if (kIsWeb) {
+      await Printing.sharePdf(bytes: bytes, filename: _nombreArchivo);
+      return;
+    }
+
+    final box = context.findRenderObject() as RenderBox?;
+    await Share.shareXFiles(
+      [
+        XFile.fromData(
+          bytes,
+          mimeType: 'application/pdf',
+          name: _nombreArchivo,
+        ),
+      ],
+      text: 'Hoja responsiva',
+      sharePositionOrigin:
+          box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+    );
+  }
+
+  double get _escalaActual => _zoomCtrl.value.getMaxScaleOnAxis();
+
+  void _aplicarZoom(double nuevaEscala, Offset foco) {
+    final destino = nuevaEscala.clamp(_zoomMin, _zoomMax).toDouble();
+    if (destino <= _zoomMin + 0.01) {
+      _zoomCtrl.value = Matrix4.identity();
+      return;
+    }
+    final factor = destino / _escalaActual;
+    final transformacion = Matrix4.identity()
+      ..translate(foco.dx, foco.dy)
+      ..scale(factor)
+      ..translate(-foco.dx, -foco.dy);
+    _zoomCtrl.value = transformacion * _zoomCtrl.value;
+    setState(() {});
+  }
+
+  void _zoomBoton(double multiplicador) {
+    final centro = Offset(_viewport.width / 2, _viewport.height / 2);
+    _aplicarZoom(_escalaActual * multiplicador, centro);
+  }
+
+  void _dobleToque() {
+    if (_escalaActual > 1.05) {
+      _zoomCtrl.value = Matrix4.identity();
+      setState(() {});
+    } else {
+      _aplicarZoom(2.5, _posDobleToque);
     }
   }
 
@@ -225,7 +344,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     }
 
     final pdf = pw.Document();
-    
+
     final azulOscuro = PdfColor.fromHex('#2F5597');
     final fondoClaro = PdfColor.fromHex('#E6F0F9');
     final colorCelesteTexto = PdfColor.fromHex('#5B9BD5');
@@ -233,7 +352,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.letter,
-        margin: pw.EdgeInsets.fromLTRB(40, 40, 40, 30),
+        margin: const pw.EdgeInsets.fromLTRB(40, 40, 40, 30),
         build: (pw.Context context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -271,10 +390,10 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                   pw.Container(
                     width: 90,
                     alignment: pw.Alignment.bottomRight,
-                    padding: pw.EdgeInsets.only(top: 25),
+                    padding: const pw.EdgeInsets.only(top: 25),
                     child: pw.Text(
                       'Fecha: $fechaStr',
-                      style: pw.TextStyle(fontSize: 9),
+                      style: const pw.TextStyle(fontSize: 9),
                     ),
                   ),
                 ],
@@ -294,17 +413,42 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                   border: pw.Border.all(color: azulOscuro, width: 1.5),
                   borderRadius: pw.BorderRadius.circular(12),
                 ),
-                padding: pw.EdgeInsets.all(3),
+                padding: const pw.EdgeInsets.all(3),
                 child: pw.Column(
                   children: [
                     pw.Padding(
-                      padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const pw.EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       child: pw.Row(
                         children: [
-                          pw.Expanded(flex: 2, child: pw.Text('Equipo', style: pw.TextStyle(color: azulOscuro, fontWeight: pw.FontWeight.bold, fontSize: 10))),
-                          pw.Expanded(flex: 2, child: pw.Text('Marca', style: pw.TextStyle(color: azulOscuro, fontWeight: pw.FontWeight.bold, fontSize: 10))),
-                          pw.Expanded(flex: 3, child: pw.Text('Modelo', style: pw.TextStyle(color: azulOscuro, fontWeight: pw.FontWeight.bold, fontSize: 10))),
-                          pw.Expanded(flex: 2, child: pw.Text('Serie', style: pw.TextStyle(color: azulOscuro, fontWeight: pw.FontWeight.bold, fontSize: 10))),
+                          pw.Expanded(
+                              flex: 2,
+                              child: pw.Text('Equipo',
+                                  style: pw.TextStyle(
+                                      color: azulOscuro,
+                                      fontWeight: pw.FontWeight.bold,
+                                      fontSize: 10))),
+                          pw.Expanded(
+                              flex: 2,
+                              child: pw.Text('Marca',
+                                  style: pw.TextStyle(
+                                      color: azulOscuro,
+                                      fontWeight: pw.FontWeight.bold,
+                                      fontSize: 10))),
+                          pw.Expanded(
+                              flex: 3,
+                              child: pw.Text('Modelo',
+                                  style: pw.TextStyle(
+                                      color: azulOscuro,
+                                      fontWeight: pw.FontWeight.bold,
+                                      fontSize: 10))),
+                          pw.Expanded(
+                              flex: 2,
+                              child: pw.Text('Serie',
+                                  style: pw.TextStyle(
+                                      color: azulOscuro,
+                                      fontWeight: pw.FontWeight.bold,
+                                      fontSize: 10))),
                         ],
                       ),
                     ),
@@ -312,14 +456,27 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                     for (var fila in filasTabla)
                       pw.Container(
                         color: fondoClaro,
-                        margin: pw.EdgeInsets.only(bottom: 1),
-                        padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        margin: const pw.EdgeInsets.only(bottom: 1),
+                        padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         child: pw.Row(
                           children: [
-                            pw.Expanded(flex: 2, child: pw.Text(fila[0], style: pw.TextStyle(fontSize: 9.5))),
-                            pw.Expanded(flex: 2, child: pw.Text(fila[1], style: pw.TextStyle(fontSize: 9.5))),
-                            pw.Expanded(flex: 3, child: pw.Text(fila[2], style: pw.TextStyle(fontSize: 9.5))),
-                            pw.Expanded(flex: 2, child: pw.Text(fila[3], style: pw.TextStyle(fontSize: 9.5))),
+                            pw.Expanded(
+                                flex: 2,
+                                child: pw.Text(fila[0],
+                                    style: const pw.TextStyle(fontSize: 9.5))),
+                            pw.Expanded(
+                                flex: 2,
+                                child: pw.Text(fila[1],
+                                    style: const pw.TextStyle(fontSize: 9.5))),
+                            pw.Expanded(
+                                flex: 3,
+                                child: pw.Text(fila[2],
+                                    style: const pw.TextStyle(fontSize: 9.5))),
+                            pw.Expanded(
+                                flex: 2,
+                                child: pw.Text(fila[3],
+                                    style: const pw.TextStyle(fontSize: 9.5))),
                           ],
                         ),
                       ),
@@ -327,10 +484,14 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                     pw.Container(
                       width: double.infinity,
                       color: fondoClaro,
-                      padding: pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const pw.EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       child: pw.Text(
-                        _datos.otrosSoftware.isEmpty ? 'Otros:' : 'Otros: ${_datos.otrosSoftware}',
-                        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                        _datos.otrosSoftware.isEmpty
+                            ? 'Otros:'
+                            : 'Otros: ${_datos.otrosSoftware}',
+                        style: pw.TextStyle(
+                            fontSize: 10, fontWeight: pw.FontWeight.bold),
                       ),
                     ),
                   ],
@@ -339,7 +500,8 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
               pw.SizedBox(height: 25),
               pw.Text(
                 'Responsable de TI:',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                style:
+                    pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
               ),
               pw.SizedBox(height: 6),
               _cajaFormulario(
@@ -351,7 +513,8 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
               pw.SizedBox(height: 16),
               pw.Text(
                 'Datos de quien Recibe el Equipo:',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                style:
+                    pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
               ),
               pw.SizedBox(height: 6),
               _cajaFormulario(
@@ -365,7 +528,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                 'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
                 'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
                 'presentar y/o a devolver en el momento en que me sea requerido.',
-                style: pw.TextStyle(fontSize: 8, height: 1.3),
+                style: const pw.TextStyle(fontSize: 8, height: 1.3),
               ),
               pw.Spacer(),
               pw.Divider(color: PdfColors.grey400, thickness: 0.5),
@@ -374,11 +537,11 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                 children: [
                   pw.Text(
                     'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73960',
-                    style: pw.TextStyle(fontSize: 7),
+                    style: const pw.TextStyle(fontSize: 7),
                   ),
                   pw.Text(
                     'F-FSIS-AXO/Rev.02',
-                    style: pw.TextStyle(fontSize: 7),
+                    style: const pw.TextStyle(fontSize: 7),
                   ),
                 ],
               ),
@@ -399,7 +562,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
   }) {
     pw.Widget fila(String label, String valor) {
       return pw.Padding(
-        padding: pw.EdgeInsets.only(bottom: 12),
+        padding: const pw.EdgeInsets.only(bottom: 12),
         child: pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.end,
           children: [
@@ -407,20 +570,20 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
               width: 55,
               child: pw.Text(
                 label,
-                style: pw.TextStyle(fontSize: 9.5),
+                style: const pw.TextStyle(fontSize: 9.5),
               ),
             ),
             pw.Expanded(
               child: pw.Container(
-                decoration: pw.BoxDecoration(
+                decoration: const pw.BoxDecoration(
                   border: pw.Border(
                     bottom: pw.BorderSide(color: PdfColors.black, width: 0.8),
                   ),
                 ),
-                padding: pw.EdgeInsets.only(bottom: 2, left: 4),
+                padding: const pw.EdgeInsets.only(bottom: 2, left: 4),
                 child: pw.Text(
                   valor,
-                  style: pw.TextStyle(fontSize: 9.5),
+                  style: const pw.TextStyle(fontSize: 9.5),
                 ),
               ),
             ),
@@ -432,7 +595,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
 
     return pw.Container(
       width: double.infinity,
-      padding: pw.EdgeInsets.fromLTRB(16, 16, 16, 4),
+      padding: const pw.EdgeInsets.fromLTRB(16, 16, 16, 4),
       decoration: pw.BoxDecoration(
         border: pw.Border.all(color: borderColor, width: 1.5),
         borderRadius: pw.BorderRadius.circular(16),
@@ -449,16 +612,240 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
     );
   }
 
+  Widget _visor() {
+    if (_cargandoInicial || _renderizando) {
+      return const Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+
+    if (_errorRender != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white70, size: 40),
+              const SizedBox(height: 12),
+              Text(
+                _errorRender!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton(
+                onPressed: _regenerar,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white54),
+                ),
+                child: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _viewport = Size(constraints.maxWidth, constraints.maxHeight);
+
+        const relacion = 8.5 / 11.0;
+        final altoDisponible = constraints.maxHeight - _alturaBarra - 12;
+        final anchoPorAlto = altoDisponible * relacion;
+        final anchoPagina = [
+          constraints.maxWidth - 32,
+          anchoPorAlto,
+          820.0,
+        ].reduce((a, b) => a < b ? a : b).clamp(200.0, 820.0);
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onDoubleTapDown: (d) => _posDobleToque = d.localPosition,
+          onDoubleTap: _dobleToque,
+          child: InteractiveViewer(
+            transformationController: _zoomCtrl,
+            minScale: _zoomMin,
+            maxScale: _zoomMax,
+            panEnabled: true,
+            scaleEnabled: true,
+            trackpadScrollCausesScale: false,
+            onInteractionEnd: (_) => setState(() {}),
+            child: Padding(
+              padding: EdgeInsets.only(bottom: _alturaBarra),
+              child: Center(
+                child: SizedBox(
+                  width: anchoPagina,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final png in _paginas)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.35),
+                                blurRadius: 18,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Image.memory(
+                            png,
+                            fit: BoxFit.fitWidth,
+                            filterQuality: FilterQuality.high,
+                            gaplessPlayback: true,
+                            isAntiAlias: true,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _controlesZoom() {
+    Widget boton(IconData icono, String tip, VoidCallback onTap) {
+      return Tooltip(
+        message: tip,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            child: Icon(icono, color: Colors.white, size: 20),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.18)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          boton(Icons.add, 'Acercar', () => _zoomBoton(1.4)),
+          Container(
+              width: 24, height: 1, color: Colors.white.withOpacity(0.18)),
+          boton(Icons.remove, 'Alejar', () => _zoomBoton(1 / 1.4)),
+          Container(
+              width: 24, height: 1, color: Colors.white.withOpacity(0.18)),
+          boton(Icons.fit_screen_outlined, 'Ajustar', () {
+            _zoomCtrl.value = Matrix4.identity();
+            setState(() {});
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _barraInferior() {
+    const moradoBoton = Color(0xFF7B3FB0);
+    final habilitado = _pdfBytes != null && !_renderizando;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(40),
+          border: Border.all(color: Colors.white.withOpacity(0.22)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: habilitado ? _compartir : null,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  disabledForegroundColor: Colors.white38,
+                  side: BorderSide(
+                      color: Colors.white.withOpacity(habilitado ? 0.55 : 0.2),
+                      width: 1.4),
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                icon: const Icon(Icons.share_outlined, size: 20),
+                label: const Text(
+                  'Compartir',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: habilitado ? _descargar : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: moradoBoton,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: moradoBoton.withOpacity(0.35),
+                  disabledForegroundColor: Colors.white38,
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                icon: const Icon(Icons.file_download_outlined, size: 22),
+                label: const Text(
+                  'Descargar PDF',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _indicadorPagina() {
+    final total = _paginas.isEmpty ? 1 : _paginas.length;
+    final zoom = _escalaActual;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.45),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.15)),
+      ),
+      child: Text(
+        zoom > 1.05
+            ? 'Pág 1 de $total  ·  ${(zoom * 100).round()}%'
+            : 'Pág 1 de $total',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final snKey = _snKeyPara(widget.nombrePestana);
-    final serie = _valor(snKey).isNotEmpty ? _valor(snKey) : 'AXO';
+    final ancho = MediaQuery.of(context).size.width;
+    final esAncha = ancho >= 600;
 
     return Scaffold(
       backgroundColor: const Color(0xFF2C1D42),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 18),
           onPressed: () => Navigator.pop(context),
@@ -471,50 +858,70 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.bold)),
-            Text('Responsiva_$serie.pdf',
+            Text(_nombreArchivo,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white60, fontSize: 11)),
           ],
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12.0),
-            child: TextButton.icon(
-              onPressed: _abrirFormularioCompletar,
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.white.withOpacity(0.15),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+          if (esAncha)
+            Padding(
+              padding: const EdgeInsets.only(right: 12.0),
+              child: TextButton.icon(
+                onPressed: _abrirFormularioCompletar,
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.white.withOpacity(0.15),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                icon: const Icon(Icons.edit_document, size: 18),
+                label: const Text(
+                  'Completar Datos',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                ),
               ),
-              icon: const Icon(Icons.edit_document, size: 18),
-              label: const Text(
-                'Completar Datos',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-              ),
+            )
+          else
+            IconButton(
+              tooltip: 'Completar datos',
+              icon: const Icon(Icons.edit_document, color: Colors.white),
+              onPressed: _abrirFormularioCompletar,
             ),
-          ),
         ],
       ),
       body: SafeArea(
-        child: _cargandoInicial
-            ? const Center(
-                child: CircularProgressIndicator(color: Colors.white))
-            : PdfPreview(
-                key: ValueKey(_datos.hashCode),
-                build: _generarPdf,
-                allowPrinting: true,
-                allowSharing: true,
-                canChangeOrientation: false,
-                canChangePageFormat: false,
-                maxPageWidth: 450,
-                pdfFileName: 'Responsiva_$serie.pdf',
-                loadingWidget: const Center(
-                    child: CircularProgressIndicator(color: Colors.white)),
-                scrollViewDecoration:
-                    const BoxDecoration(color: Color(0xFF2C1D42)),
+        child: Stack(
+          children: [
+            Positioned.fill(child: _visor()),
+            if (!_renderizando && _errorRender == null && !_cargandoInicial)
+              Positioned(
+                right: 12,
+                top: 12,
+                child: _controlesZoom(),
               ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!_renderizando && _errorRender == null)
+                      _indicadorPagina(),
+                    const SizedBox(height: 10),
+                    _barraInferior(),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -613,8 +1020,7 @@ class _CompletarDatosResponsivaScreenState
       hintStyle: const TextStyle(color: Color(0xFFB0B0B8), fontSize: 13),
       filled: true,
       fillColor: const Color(0xFFF7F7FA),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
@@ -675,98 +1081,103 @@ class _CompletarDatosResponsivaScreenState
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _tituloSeccion('Equipo principal'),
-                    TextField(
-                      controller: _marcaEquipoManual,
-                      decoration: _decoracion('Marca (opcional)',
-                          hint:
-                              'Se detecta automáticamente del Modelo si se deja vacío'),
-                    ),
-                    const SizedBox(height: 16),
-                    _tituloSeccion('Accesorios'),
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      activeColor: primaryPurple,
-                      checkboxShape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6)),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      value: _incluyeCargador,
-                      title: const Text('¿Incluye cargador?',
-                          style: TextStyle(fontSize: 14)),
-                      onChanged: (v) =>
-                          setState(() => _incluyeCargador = v ?? false),
-                    ),
-                    if (_incluyeCargador) ...[
-                      const SizedBox(height: 8),
-                      TextField(
-                          controller: _marcaCargador,
-                          decoration: _decoracion('Marca del cargador')),
-                      const SizedBox(height: 12),
-                      TextField(
-                          controller: _serieCargador,
-                          decoration: _decoracion('Serie del cargador')),
-                    ],
-                    if (widget.mostrarMonitor) ...[
-                      const SizedBox(height: 16),
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        activeColor: primaryPurple,
-                        checkboxShape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6)),
-                        controlAffinity: ListTileControlAffinity.leading,
-                        value: _incluyeMonitor,
-                        title: const Text('¿Incluye monitor?',
-                            style: TextStyle(fontSize: 14)),
-                        onChanged: (v) =>
-                            setState(() => _incluyeMonitor = v ?? false),
-                      ),
-                      if (_incluyeMonitor) ...[
-                        const SizedBox(height: 8),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _tituloSeccion('Equipo principal'),
                         TextField(
-                            controller: _marcaMonitor,
-                            decoration: _decoracion('Marca del monitor')),
+                          controller: _marcaEquipoManual,
+                          decoration: _decoracion('Marca (opcional)',
+                              hint:
+                                  'Se detecta automáticamente del Modelo si se deja vacío'),
+                        ),
+                        const SizedBox(height: 16),
+                        _tituloSeccion('Accesorios'),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          activeColor: primaryPurple,
+                          checkboxShape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6)),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          value: _incluyeCargador,
+                          title: const Text('¿Incluye cargador?',
+                              style: TextStyle(fontSize: 14)),
+                          onChanged: (v) =>
+                              setState(() => _incluyeCargador = v ?? false),
+                        ),
+                        if (_incluyeCargador) ...[
+                          const SizedBox(height: 8),
+                          TextField(
+                              controller: _marcaCargador,
+                              decoration: _decoracion('Marca del cargador')),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: _serieCargador,
+                              decoration: _decoracion('Serie del cargador')),
+                        ],
+                        if (widget.mostrarMonitor) ...[
+                          const SizedBox(height: 16),
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            activeColor: primaryPurple,
+                            checkboxShape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6)),
+                            controlAffinity: ListTileControlAffinity.leading,
+                            value: _incluyeMonitor,
+                            title: const Text('¿Incluye monitor?',
+                                style: TextStyle(fontSize: 14)),
+                            onChanged: (v) =>
+                                setState(() => _incluyeMonitor = v ?? false),
+                          ),
+                          if (_incluyeMonitor) ...[
+                            const SizedBox(height: 8),
+                            TextField(
+                                controller: _marcaMonitor,
+                                decoration: _decoracion('Marca del monitor')),
+                          ],
+                        ],
+                        const SizedBox(height: 16),
+                        _tituloSeccion('Software / Licencias'),
+                        TextField(
+                          controller: _otrosSoftware,
+                          maxLines: 2,
+                          decoration: _decoracion('Otros',
+                              hint: 'Ej. Microsoft Office 365'),
+                        ),
+                        const SizedBox(height: 16),
+                        _tituloSeccion('Responsable de TI'),
+                        TextField(
+                            controller: _nombreTI,
+                            decoration: _decoracion('Nombre')),
+                        const SizedBox(height: 12),
+                        TextField(
+                            controller: _empresaTI,
+                            decoration: _decoracion('Empresa')),
+                        const SizedBox(height: 12),
+                        TextField(
+                            controller: _correoTI,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _decoracion('Correo')),
+                        const SizedBox(height: 16),
+                        _tituloSeccion('Quien recibe el equipo'),
+                        TextField(
+                            controller: _nombreRecibe,
+                            decoration: _decoracion('Nombre')),
+                        const SizedBox(height: 12),
+                        TextField(
+                            controller: _empresaRecibe,
+                            decoration: _decoracion('Empresa')),
+                        const SizedBox(height: 12),
+                        TextField(
+                            controller: _correoRecibe,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _decoracion('Correo')),
                       ],
-                    ],
-                    const SizedBox(height: 16),
-                    _tituloSeccion('Software / Licencias'),
-                    TextField(
-                      controller: _otrosSoftware,
-                      maxLines: 2,
-                      decoration: _decoracion('Otros',
-                          hint: 'Ej. Microsoft Office 365'),
                     ),
-                    const SizedBox(height: 16),
-                    _tituloSeccion('Responsable de TI'),
-                    TextField(
-                        controller: _nombreTI,
-                        decoration: _decoracion('Nombre')),
-                    const SizedBox(height: 12),
-                    TextField(
-                        controller: _empresaTI,
-                        decoration: _decoracion('Empresa')),
-                    const SizedBox(height: 12),
-                    TextField(
-                        controller: _correoTI,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: _decoracion('Correo')),
-                    const SizedBox(height: 16),
-                    _tituloSeccion('Quien recibe el equipo'),
-                    TextField(
-                        controller: _nombreRecibe,
-                        decoration: _decoracion('Nombre')),
-                    const SizedBox(height: 12),
-                    TextField(
-                        controller: _empresaRecibe,
-                        decoration: _decoracion('Empresa')),
-                    const SizedBox(height: 12),
-                    TextField(
-                        controller: _correoRecibe,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: _decoracion('Correo')),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -776,32 +1187,37 @@ class _CompletarDatosResponsivaScreenState
                 color: Colors.white,
                 border: Border(top: BorderSide(color: Color(0xFFF0F0F3))),
               ),
-              child: SizedBox(
-                width: double.infinity,
-                child: Material(
-                  color: Colors.transparent,
-                  child: Ink(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFF6B3F96), primaryPurple],
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: _guardar,
-                      child: Container(
-                        height: 52,
-                        alignment: Alignment.center,
-                        child: const Text(
-                          'APLICAR Y ACTUALIZAR VISTA',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.3,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Ink(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0xFF6B3F96), primaryPurple],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: _guardar,
+                          child: Container(
+                            height: 52,
+                            alignment: Alignment.center,
+                            child: const Text(
+                              'APLICAR Y ACTUALIZAR VISTA',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
                           ),
                         ),
                       ),
