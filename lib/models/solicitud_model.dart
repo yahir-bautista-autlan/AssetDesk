@@ -74,13 +74,19 @@ class SolicitudModel {
     );
   }
 
+  Map<String, dynamic>? _payloadCache;
+
   Map<String, dynamic> get payloadMap {
+    final cacheado = _payloadCache;
+    if (cacheado != null) return cacheado;
     try {
       final decoded = jsonDecode(payload);
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      return {};
+      if (decoded is Map) {
+        return _payloadCache = Map<String, dynamic>.from(decoded);
+      }
+      return _payloadCache = {};
     } catch (_) {
-      return {};
+      return _payloadCache = {};
     }
   }
 
@@ -89,8 +95,13 @@ class SolicitudModel {
 
   static String _texto(dynamic v) => v?.toString().trim() ?? '';
 
+  List<CambioCampo>? _cambiosCache;
+
   List<CambioCampo> get cambios {
     if (actionType != 'editar') return [];
+    final cacheado = _cambiosCache;
+    if (cacheado != null) return cacheado;
+
     final nuevos = payloadMap;
     final resultado = <CambioCampo>[];
 
@@ -100,7 +111,7 @@ class SolicitudModel {
       if (_clave(nuevo) == _clave(anterior)) continue;
       resultado.add(CambioCampo(e.key, anterior, nuevo));
     }
-    return resultado;
+    return _cambiosCache = resultado;
   }
 
   List<MapEntry<String, String>> get camposSinCambio {
@@ -141,12 +152,18 @@ class SolicitudModel {
         return 'Editar elemento';
       case 'baja':
         return 'Dar de baja';
+      case 'transferir':
+        return 'Transferir elemento';
       default:
         return actionType;
     }
   }
 
   String get motivoBaja => payloadMap['motivo']?.toString() ?? '';
+
+  String get destinoNombre => payloadMap['destinoNombre']?.toString() ?? '';
+
+  String get motivoTransferencia => payloadMap['motivo']?.toString() ?? '';
 
   String get fechaCorta {
     final dt = DateTime.tryParse(createdAt);

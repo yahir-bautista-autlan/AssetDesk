@@ -67,6 +67,11 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   UserModel? _user;
   int _pendientes = 0;
 
+  int _datosVersion = 0;
+  String _memoKey = '';
+  (List<String>, List<dynamic>)? _memoResultado;
+  final Map<String, List<String>> _indiceBusqueda = {};
+
   late final Listenable _headerListenable =
       Listenable.merge([_tabIndex, _filtroEstado]);
   late final Listenable _tableListenable = Listenable.merge(
@@ -99,6 +104,13 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     super.dispose();
   }
 
+  void _datosCambiaron() {
+    _datosVersion++;
+    _memoKey = '';
+    _memoResultado = null;
+    _indiceBusqueda.clear();
+  }
+
   Future<void> _cargarUsuario() async {
     final u = await AuthService.obtenerUsuarioActual();
     if (!mounted) return;
@@ -107,9 +119,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   }
 
   Future<void> _cargarPendientes() async {
-    final lista = await AuthService.obtenerSolicitudesPendientes();
+    final total = await AuthService.contarSolicitudesPendientes();
     if (!mounted) return;
-    setState(() => _pendientes = lista.length);
+    setState(() => _pendientes = total);
   }
 
   Future<void> _abrirSolicitudes() async {
@@ -161,16 +173,17 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       return {'headers': <String>[], 'rows': <dynamic>[]};
     }
 
-    final data = Map<String, dynamic>.from(dataRaw);
-    final List<dynamic> rawHeaders = List<dynamic>.from(data['headers']);
+    final List<dynamic> rawHeaders = List<dynamic>.from(dataRaw['headers']);
     final List<String> uniqueHeaders = [];
     final Map<String, int> conteoNombres = {};
+    bool hayDuplicados = false;
 
     for (var h in rawHeaders) {
       final limpio = h.toString().trim();
       if (limpio.isEmpty) continue;
 
       if (conteoNombres.containsKey(limpio)) {
+        hayDuplicados = true;
         conteoNombres[limpio] = conteoNombres[limpio]! + 1;
         uniqueHeaders.add('$limpio (${conteoNombres[limpio]})');
       } else {
@@ -179,8 +192,11 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       }
     }
 
-    final List<dynamic> rows = List<dynamic>.from(data['rows'] ?? []);
-    final List<dynamic> rawOriginalHeaders = List<dynamic>.from(rawHeaders);
+    final List<dynamic> rows = List<dynamic>.from(dataRaw['rows'] ?? []);
+
+    if (!hayDuplicados) {
+      return {'headers': uniqueHeaders, 'rows': rows};
+    }
 
     final resultRows = <dynamic>[];
     for (var row in rows) {
@@ -189,8 +205,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
         final Map<String, int> conteoFila = {};
 
         for (int i = 0; i < uniqueHeaders.length; i++) {
-          final originalName = rawOriginalHeaders.length > i
-              ? rawOriginalHeaders[i].toString().trim()
+          final originalName = rawHeaders.length > i
+              ? rawHeaders[i].toString().trim()
               : '';
           final assignedName = uniqueHeaders[i];
 
@@ -226,6 +242,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     _bajasEnCarga.remove(key);
     if (!mounted) return;
 
+    _datosCambiaron();
     setState(() {
       _datosHojas[key] = procesado;
     });
@@ -240,6 +257,12 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     final nombrePestana = _tabs[index];
     final filtro = _filtroEstado.value;
     final dataKey = _dataKeyFor(nombrePestana, filtro);
+    final query = _searchQuery.value.toLowerCase().trim();
+
+    final memoKey =
+        '$_datosVersion|$index|$filtro|$query|${identityHashCode(_columnasPorPestana.value)}';
+    final memo = _memoResultado;
+    if (memo != null && memoKey == _memoKey) return memo;
 
     final pestanaData = _datosHojas[dataKey] ?? {'headers': [], 'rows': []};
 
@@ -247,11 +270,20 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     final Set<String> activasSet = _columnasPorPestana.value[dataKey] ?? allHeaders.toSet();
     final List<String> headers = allHeaders.where((h) => activasSet.contains(h)).toList();
 
-    final List<dynamic> rows = List<dynamic>.from(pestanaData['rows'] ?? []);
-    final query = _searchQuery.value.toLowerCase().trim();
+    final List<dynamic> rows = pestanaData['rows'] as List<dynamic>? ?? const [];
 
-    final filteredRows = rows.where((row) {
-      if (row is! Map) return false;
+    final List<String>? indice = query.isEmpty
+        ? null
+        : (_indiceBusqueda[dataKey] ??= rows
+            .map((r) => r is Map
+                ? r.values.map((v) => v.toString()).join('\u0001').toLowerCase()
+                : '')
+            .toList());
+
+    final filteredRows = <dynamic>[];
+    for (var i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      if (row is! Map) continue;
 
       if (filtro == 'Asignados' || filtro == 'Disponibles') {
         String estatusValor = '';
@@ -262,19 +294,23 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
         });
 
         if (nombrePestana == 'Consumibles') {
-          if (filtro == 'Asignados' && estatusValor != 'asignado') return false;
-          if (filtro == 'Disponibles' && estatusValor != 'stock') return false;
+          if (filtro == 'Asignados' && estatusValor != 'asignado') continue;
+          if (filtro == 'Disponibles' && estatusValor != 'stock') continue;
         } else {
-          if (filtro == 'Asignados' && estatusValor != 'activo') return false;
-          if (filtro == 'Disponibles' && estatusValor != 'pendiente de asignar') return false;
+          if (filtro == 'Asignados' && estatusValor != 'activo') continue;
+          if (filtro == 'Disponibles' && estatusValor != 'pendiente de asignar') continue;
         }
       }
 
-      if (query.isEmpty) return true;
-      return row.entries.any((entry) => entry.value.toString().toLowerCase().contains(query));
-    }).toList();
+      if (indice != null && !indice[i].contains(query)) continue;
 
-    return (headers, filteredRows);
+      filteredRows.add(row);
+    }
+
+    final resultado = (headers, filteredRows);
+    _memoKey = memoKey;
+    _memoResultado = resultado;
+    return resultado;
   }
 
   Future<void> _escanearQR() async {
@@ -349,6 +385,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       columnasIniciales[pestana] = Set<String>.from(procesado['headers'] as List<String>);
     });
 
+    _datosCambiaron();
     setState(() {
       _datosHojas = datosProcesados;
       _bajasEnCarga.clear();
@@ -1739,6 +1776,54 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     }
   }
 
+  List<InventoryModel> get _destinosTransferencia {
+    final user = AuthService.usuarioCache;
+    final actualId = widget.inventario?.id ?? '';
+    return (user?.inventarios ?? [])
+        .where((i) => i.id != actualId)
+        .toList();
+  }
+
+  bool get _puedeTransferir =>
+      widget.puedeEditar &&
+      _valor(_config.snKey).isNotEmpty &&
+      _destinosTransferencia.isNotEmpty;
+
+  Future<void> _transferir() async {
+    final destino = await showDialog<InventoryModel>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _TransferirDialog(
+        titulo: _titulo(),
+        inventarioActual: widget.inventario?.nombre ?? 'Inventario actual',
+        pestana: widget.nombrePestana,
+        destinos: _destinosTransferencia,
+        onConfirmar: (dest, motivo) => AuthService.transferirActivo(
+          spreadsheetId: widget.spreadsheetId,
+          pestana: widget.nombrePestana,
+          sn: _valor(_config.snKey),
+          destinoInventoryId: dest.id,
+          motivo: motivo,
+        ),
+      ),
+    );
+
+    if (destino == null || !mounted) return;
+
+    if (!AuthService.ultimaRespuestaPendiente) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Elemento transferido a ${destino.nombre}'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+
+    Navigator.pop(context);
+    widget.onEditExitosa();
+  }
+
   Future<void> _mostrarDialogoAsignar() async {
     final TextEditingController deptoController = TextEditingController(
       text: _valor('Departamento'),
@@ -1829,6 +1914,42 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     deptoController.dispose();
   }
 
+  Widget _chipAccion({
+    required IconData icono,
+    required String texto,
+    required Color colorTexto,
+    required Color fondo,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: fondo,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icono, size: 14, color: colorTexto),
+            const SizedBox(width: 4),
+            Text(
+              texto,
+              style: TextStyle(
+                color: colorTexto,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final secciones = _seccionesConDatos();
@@ -1865,11 +1986,13 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 16, 8),
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
                           child: Text(
                             _titulo(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -1877,8 +2000,23 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             ),
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        if (_puedeTransferir) ...[
+                          _chipAccion(
+                            icono: Icons.swap_horiz_rounded,
+                            texto: 'Transferir',
+                            colorTexto: primaryPurple,
+                            fondo: const Color(0xFFEFE8F6),
+                            onTap: _transferir,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         if (!esConsumible) ...[
-                          InkWell(
+                          _chipAccion(
+                            icono: Icons.description_outlined,
+                            texto: 'Responsiva',
+                            colorTexto: const Color(0xFF3457D5),
+                            fondo: const Color(0xFFE3EBFF),
                             onTap: () {
                               Navigator.push(
                                 context,
@@ -1891,31 +2029,6 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                                 ),
                               );
                             },
-                            borderRadius: BorderRadius.circular(14),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE3EBFF),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.description_outlined,
-                                      size: 14, color: Color(0xFF3457D5)),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'Responsiva',
-                                    style: TextStyle(
-                                      color: Color(0xFF3457D5),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ),
                           const SizedBox(width: 8),
                         ],
@@ -2705,6 +2818,266 @@ class _BajaExitosaDialog extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TransferirDialog extends StatefulWidget {
+  final String titulo;
+  final String inventarioActual;
+  final String pestana;
+  final List<InventoryModel> destinos;
+  final Future<bool> Function(InventoryModel destino, String motivo) onConfirmar;
+
+  const _TransferirDialog({
+    required this.titulo,
+    required this.inventarioActual,
+    required this.pestana,
+    required this.destinos,
+    required this.onConfirmar,
+  });
+
+  @override
+  State<_TransferirDialog> createState() => _TransferirDialogState();
+}
+
+class _TransferirDialogState extends State<_TransferirDialog> {
+  static const primaryPurple = Color(0xFF532E7C);
+
+  InventoryModel? _destino;
+  final TextEditingController _motivoCtrl = TextEditingController();
+  bool _cargando = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _motivoCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _confirmar() async {
+    final destino = _destino;
+    if (destino == null) {
+      setState(() => _error = 'Selecciona el inventario destino');
+      return;
+    }
+
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+
+    final exito = await widget.onConfirmar(destino, _motivoCtrl.text.trim());
+    if (!mounted) return;
+
+    if (exito) {
+      Navigator.pop(context, destino);
+    } else {
+      setState(() {
+        _cargando = false;
+        _error = AuthService.ultimoError.isEmpty
+            ? 'No se pudo transferir el elemento'
+            : AuthService.ultimoError;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                      color: Color(0xFFEFE8F6), shape: BoxShape.circle),
+                  child: const Icon(Icons.swap_horiz_rounded,
+                      color: primaryPurple, size: 30),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Transferir elemento',
+                  style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87),
+                ),
+                const SizedBox(height: 8),
+                RichText(
+                  textAlign: TextAlign.center,
+                  text: TextSpan(
+                    style: const TextStyle(
+                        fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
+                    children: [
+                      TextSpan(
+                        text: widget.titulo,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, color: Colors.black87),
+                      ),
+                      const TextSpan(text: ' saldrá de '),
+                      TextSpan(
+                        text: widget.inventarioActual,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      TextSpan(
+                          text: ' y pasará a la pestaña "${widget.pestana}" del inventario que elijas.'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Inventario destino',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6B7280)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<InventoryModel>(
+                  initialValue: _destino,
+                  isExpanded: true,
+                  hint: const Text('Seleccionar inventario...',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
+                  items: widget.destinos
+                      .map((i) => DropdownMenuItem<InventoryModel>(
+                            value: i,
+                            child: Text(
+                              i.ubicacion.isNotEmpty
+                                  ? '${i.nombre}  ·  ${i.ubicacion}'
+                                  : i.nombre,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: _cargando
+                      ? null
+                      : (v) => setState(() {
+                            _destino = v;
+                            _error = null;
+                          }),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: const Color(0xFFF9FAFB),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          const BorderSide(color: primaryPurple, width: 1.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _motivoCtrl,
+                  maxLines: 2,
+                  enabled: !_cargando,
+                  decoration: InputDecoration(
+                    hintText: 'Motivo de la transferencia (opcional)',
+                    hintStyle: const TextStyle(
+                        fontSize: 12, color: Color(0xFF9CA3AF)),
+                    filled: true,
+                    fillColor: const Color(0xFFF9FAFB),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          const BorderSide(color: primaryPurple, width: 1.5),
+                    ),
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _error!,
+                    style:
+                        const TextStyle(color: Color(0xFFDC2626), fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed:
+                            _cargando ? null : () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFE5E7EB)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24)),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                        ),
+                        child: const Text('Cancelar',
+                            style: TextStyle(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _cargando ? null : _confirmar,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryPurple,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24)),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                        ),
+                        child: _cargando
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Text('Transferir',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

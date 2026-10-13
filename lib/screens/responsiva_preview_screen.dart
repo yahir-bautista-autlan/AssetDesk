@@ -220,9 +220,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
 
   String _nombreEncabezado() {
     var n = widget.inventario?.nombre.trim() ?? '';
-    if (n.toLowerCase().startsWith('inventario ')) {
-      n = n.substring(11).trim();
-    }
+    n = n.replaceFirst(RegExp(r'^inventario\s+', caseSensitive: false), '').trim();
     return n.isEmpty ? 'AUTLAN' : n.toUpperCase();
   }
 
@@ -306,10 +304,22 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
 
   Future<Uint8List> _generarPdf(PdfPageFormat format) async {
     pw.MemoryImage? logo;
-    try {
-      final ByteData bytes = await rootBundle.load('assets/logo_autlan.png');
-      logo = pw.MemoryImage(bytes.buffer.asUint8List());
-    } catch (_) {}
+    final inv = widget.inventario;
+    if (inv != null && inv.logoId.isNotEmpty) {
+      try {
+        final datosLogo =
+            await AuthService.obtenerImagenInventario(inv.id, 'logo', inv.logoId);
+        if (datosLogo != null && datosLogo.isNotEmpty) {
+          logo = pw.MemoryImage(datosLogo);
+        }
+      } catch (_) {}
+    }
+    if (logo == null) {
+      try {
+        final ByteData bytes = await rootBundle.load('assets/logo_autlan.png');
+        logo = pw.MemoryImage(bytes.buffer.asUint8List());
+      } catch (_) {}
+    }
 
     final snKey = _snKeyPara(widget.nombrePestana);
     final serieEquipo = _valor(snKey);
@@ -362,14 +372,18 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen> {
                 children: [
                   pw.Container(
                     width: 90,
-                    child: logo != null ? pw.Image(logo) : pw.SizedBox(),
+                    height: 55,
+                    alignment: pw.Alignment.centerLeft,
+                    child: logo != null
+                        ? pw.Image(logo, fit: pw.BoxFit.contain)
+                        : pw.SizedBox(),
                   ),
                   pw.Expanded(
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
                         pw.Text(
-                          'HIDROELÉCTRICA $nombreEmpresa',
+                          nombreEmpresa,
                           style: pw.TextStyle(
                             fontSize: 14,
                             fontWeight: pw.FontWeight.bold,

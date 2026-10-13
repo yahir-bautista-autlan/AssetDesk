@@ -5,6 +5,8 @@ class InventoryModel {
   final String spreadsheetId;
   final String nombreVisible;
   final String ubicacion;
+  final String logoId;
+  final String portadaId;
 
   InventoryModel({
     required this.id,
@@ -13,6 +15,8 @@ class InventoryModel {
     required this.spreadsheetId,
     this.nombreVisible = '',
     this.ubicacion = '',
+    this.logoId = '',
+    this.portadaId = '',
   });
 
   bool esResponsable(String correo) =>
@@ -27,6 +31,8 @@ class InventoryModel {
         spreadsheetId: json['spreadsheetId']?.toString() ?? '',
         nombreVisible: json['nombreVisible']?.toString() ?? '',
         ubicacion: json['ubicacion']?.toString() ?? '',
+        logoId: json['logoId']?.toString() ?? '',
+        portadaId: json['portadaId']?.toString() ?? '',
       );
     }
     final s = json?.toString() ?? '';
@@ -45,6 +51,8 @@ class InventoryModel {
       'spreadsheetId': spreadsheetId,
       'nombreVisible': nombreVisible,
       'ubicacion': ubicacion,
+      'logoId': logoId,
+      'portadaId': portadaId,
     };
   }
 }

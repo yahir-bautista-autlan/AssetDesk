@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/inventory_model.dart';
 import '../models/solicitud_model.dart';
 import '../models/user_model.dart';
-
 
 class _CacheEntry {
   final dynamic data;
@@ -28,6 +28,8 @@ class AuthService {
 
   static UserModel? _usuarioActual;
   static final Map<String, _CacheEntry> _cache = {};
+  static final Map<String, Uint8List> _imgCache = {};
+  static final Map<String, Future<Uint8List?>> _imgEnCurso = {};
 
   static UserModel? get usuarioCache => _usuarioActual;
   static String get actorEmailSync => _usuarioActual?.correo ?? '';
@@ -153,6 +155,8 @@ class AuthService {
   static Future<void> logout() async {
     _usuarioActual = null;
     _invalidarCache();
+    _imgCache.clear();
+    _imgEnCurso.clear();
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
@@ -349,6 +353,72 @@ class AuthService {
     return {'headers': <String>[], 'rows': <dynamic>[]};
   }
 
+  static Future<Uint8List?> obtenerImagenInventario(
+      String inventarioId, String tipo, String fileId) {
+    if (fileId.isEmpty) return Future.value(null);
+    final cacheada = _imgCache[fileId];
+    if (cacheada != null) return Future.value(cacheada);
+
+    return _imgEnCurso[fileId] ??= () async {
+      try {
+        final data = await _post({
+          'action': 'obtenerImagenInventario',
+          'actorEmail': await _actor(),
+          'idInventario': inventarioId,
+          'tipo': tipo,
+        });
+        if (_ok(data) && data!['base64'] != null) {
+          final bytes = base64Decode(data['base64'].toString());
+          _imgCache[fileId] = bytes;
+          return bytes;
+        }
+        return null;
+      } finally {
+        _imgEnCurso.remove(fileId);
+      }
+    }();
+  }
+
+  static Future<bool> guardarImagenInventario({
+    required String idInventario,
+    required String tipo,
+    required Uint8List bytes,
+    required String mime,
+  }) async {
+    final data = await _post({
+      'action': 'guardarImagenInventario',
+      'actorEmail': await _actor(),
+      'idInventario': idInventario,
+      'tipo': tipo,
+      'base64': base64Encode(bytes),
+      'mime': mime,
+    });
+    return _ok(data);
+  }
+
+  static Future<List<InventoryModel>?> refrescarInventariosUsuario() async {
+    final data = await _post({
+      'action': 'obtenerInventarios',
+      'actorEmail': await _actor(),
+    });
+    if (!_ok(data)) return null;
+
+    final raw = (data!['inventarios'] as List? ?? []);
+    final lista = raw.map((e) => InventoryModel.fromJson(e)).toList();
+
+    final u = _usuarioActual;
+    if (u != null) {
+      try {
+        final json = Map<String, dynamic>.from(u.toJson());
+        json['inventarios'] = raw;
+        _usuarioActual = UserModel.fromJson(json);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_prefsKey, jsonEncode(_usuarioActual!.toJson()));
+      } catch (_) {}
+    }
+    return lista;
+  }
+
   static Future<InventoryModel?> crearInventario({
     required String nombre,
     required String spreadsheet,
@@ -413,6 +483,26 @@ class AuthService {
     return _ok(data);
   }
 
+  static Future<bool> transferirActivo({
+    required String spreadsheetId,
+    required String pestana,
+    required String sn,
+    required String destinoInventoryId,
+    String motivo = '',
+  }) async {
+    final data = await _post({
+      'action': 'transferirActivo',
+      'actorEmail': await _actor(),
+      'spreadsheetId': spreadsheetId,
+      'pestana': pestana,
+      'sn': sn,
+      'destinoInventoryId': destinoInventoryId,
+      'motivo': motivo,
+    });
+    if (_ok(data)) _invalidarCache();
+    return _ok(data);
+  }
+
   static Future<bool> agregarActivo({
     required String spreadsheetId,
     required String pestana,
@@ -447,15 +537,33 @@ class AuthService {
     return _ok(data);
   }
 
+  static Future<int> contarSolicitudesPendientes() async {
+    final cacheado = _leerCache('pend_count');
+    if (cacheado is int) return cacheado;
+
+    final data = await _post({
+      'action': 'contarSolicitudesPendientes',
+      'actorEmail': await _actor(),
+    });
+    if (_ok(data)) {
+      final total = (data!['total'] as num?)?.toInt() ?? 0;
+      _guardarCache('pend_count', total);
+      return total;
+    }
+    return 0;
+  }
+
   static Future<List<SolicitudModel>> obtenerSolicitudesPendientes() async {
     final data = await _post({
       'action': 'obtenerSolicitudesPendientes',
       'actorEmail': await _actor(),
     });
     if (_ok(data)) {
-      return (data!['solicitudes'] as List? ?? [])
+      final lista = (data!['solicitudes'] as List? ?? [])
           .map((e) => SolicitudModel.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
+      _guardarCache('pend_count', lista.length);
+      return lista;
     }
     return <SolicitudModel>[];
   }

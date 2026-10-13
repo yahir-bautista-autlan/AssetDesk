@@ -3,6 +3,7 @@ import '../models/inventory_model.dart';
 import '../models/solicitud_model.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../widgets/inventario_imagen.dart';
 import 'inventory_dashboard_screen.dart';
 
 class InventorySelectionScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
 
   UserModel? _user;
   int _pendientes = 0;
+  late List<InventoryModel> _inventarios;
 
   bool get _puedeAprobar {
     final u = _user;
@@ -33,7 +35,19 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
   @override
   void initState() {
     super.initState();
+    _inventarios = List<InventoryModel>.from(widget.inventariosVinculados);
     _cargarUsuario();
+    _refrescarInventarios();
+  }
+
+  Future<void> _refrescarInventarios() async {
+    await AuthService.refrescarInventariosUsuario();
+    final u = await AuthService.obtenerUsuarioActual();
+    if (!mounted || u == null) return;
+    setState(() {
+      _user = u;
+      _inventarios = List<InventoryModel>.from(u.inventarios);
+    });
   }
 
   Future<void> _cargarUsuario() async {
@@ -44,9 +58,9 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
   }
 
   Future<void> _cargarPendientes() async {
-    final lista = await AuthService.obtenerSolicitudesPendientes();
+    final total = await AuthService.contarSolicitudesPendientes();
     if (!mounted) return;
-    setState(() => _pendientes = lista.length);
+    setState(() => _pendientes = total);
   }
 
   Future<void> _abrirSolicitudes() async {
@@ -249,7 +263,7 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final inventarios = widget.inventariosVinculados;
+    final inventarios = _inventarios;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -291,7 +305,8 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
                         onSelected: (value) {
                           switch (value) {
                             case 'admin':
-                              Navigator.pushNamed(context, '/admin');
+                              Navigator.pushNamed(context, '/admin')
+                                  .then((_) => _refrescarInventarios());
                               break;
                             case 'solicitudes':
                               _abrirSolicitudes();
@@ -448,7 +463,16 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
               ),
             );
           },
-          child: Padding(
+          child: inv.portadaId.isNotEmpty
+              ? _contenidoConPortada(inv)
+              : _contenidoClasico(inv),
+        ),
+      ),
+    );
+  }
+
+  Widget _contenidoClasico(InventoryModel inv) {
+    return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
             child: Row(
               children: [
@@ -517,9 +541,69 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
                 ),
               ],
             ),
+          );
+  }
+
+  Widget _contenidoConPortada(InventoryModel inv) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        InventarioImagen(
+          inventarioId: inv.id,
+          tipo: 'portada',
+          fileId: inv.portadaId,
+          fit: BoxFit.cover,
+          fallback: Container(color: const Color(0xFFEFE8F6)),
+        ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0x14000000), Color(0xCC000000)],
+            ),
           ),
         ),
-      ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                inv.nombre,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              if (inv.ubicacion.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Ubicación: ${inv.ubicacion}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 2),
+              Text(
+                'Google Sheet: ${inv.nombreVisible.isNotEmpty ? inv.nombreVisible : 'No vinculado'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13, color: Color(0xFFE5E7EB)),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -565,6 +649,8 @@ class _SolicitudesPendientesScreenState
         return const Color(0xFF2563EB);
       case 'baja':
         return const Color(0xFFDC2626);
+      case 'transferir':
+        return const Color(0xFF7C3AED);
       default:
         return primaryPurple;
     }
@@ -578,8 +664,21 @@ class _SolicitudesPendientesScreenState
         return Icons.edit_outlined;
       case 'baja':
         return Icons.remove_circle_outline;
+      case 'transferir':
+        return Icons.swap_horiz_rounded;
       default:
         return Icons.help_outline;
+    }
+  }
+
+  String _textoConfirmacion(SolicitudModel s) {
+    switch (s.actionType) {
+      case 'editar':
+        return 'Se aplicarán ${s.cambios.length} cambio(s) solicitados por ${s.requestedByName} directamente en el inventario.';
+      case 'transferir':
+        return 'Se transferirá el elemento a ${s.destinoNombre.isEmpty ? 'el inventario destino' : s.destinoNombre}, según lo solicitado por ${s.requestedByName}.';
+      default:
+        return 'Se aplicará el cambio solicitado por ${s.requestedByName} directamente en el inventario.';
     }
   }
 
@@ -603,9 +702,7 @@ class _SolicitudesPendientesScreenState
           title: const Text('Aprobar solicitud',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           content: Text(
-            s.actionType == 'editar'
-                ? 'Se aplicarán ${s.cambios.length} cambio(s) solicitados por ${s.requestedByName} directamente en el inventario.'
-                : 'Se aplicará el cambio solicitado por ${s.requestedByName} directamente en el inventario.',
+            _textoConfirmacion(s),
             style: const TextStyle(fontSize: 14, color: Colors.black87),
           ),
           actions: [
@@ -1059,6 +1156,56 @@ class _SolicitudesPendientesScreenState
               ),
           ];
         }
+      case 'transferir':
+        {
+          final motivo = s.motivoTransferencia;
+          return [
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFE8F6),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFD9C8EA)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('DESTINO',
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: primaryPurple,
+                          letterSpacing: 0.5)),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.destinoNombre.isEmpty ? 'Sin destino' : s.destinoNombre,
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF3B1F5C)),
+                  ),
+                  if (motivo.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text('Motivo: $motivo',
+                        style: const TextStyle(
+                            fontSize: 12, color: Color(0xFF4B5563))),
+                  ],
+                ],
+              ),
+            ),
+            if (!s.referenciaEncontrada)
+              _avisoSinReferencia()
+            else
+              _desplegable(
+                'Datos del elemento (${s.camposDelElemento.length})',
+                s.camposDelElemento
+                    .map((e) => _filaDato(e.key, e.value))
+                    .toList(),
+              ),
+          ];
+        }
       default:
         return const [];
     }
@@ -1220,6 +1367,7 @@ class _SolicitudesPendientesScreenState
     );
   }
 }
+
 class _ComentarioRechazoDialog extends StatefulWidget {
   const _ComentarioRechazoDialog();
 

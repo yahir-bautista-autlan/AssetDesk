@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
+import '../widgets/inventario_imagen.dart';
 import 'login_screen.dart';
 
 class AdminManagementScreen extends StatefulWidget {
@@ -292,7 +295,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   }
 
   Future<InventoryModel?> _dialogoInventario({InventoryModel? inicial}) async {
-    final datos = await showDialog<Map<String, String>>(
+    final datos = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => _InventarioDialog(
         inicial: inicial,
@@ -303,44 +306,85 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
 
     setState(() => _cargando = true);
 
+    String idInventario;
     if (inicial == null) {
       final nuevo = await AuthService.crearInventario(
-        nombre: datos['nombre'] ?? '',
-        spreadsheet: datos['sheet'] ?? '',
-        ubicacion: datos['ubicacion'] ?? '',
-        responsableEmail: datos['responsable'] ?? '',
+        nombre: (datos['nombre'] ?? '').toString(),
+        spreadsheet: (datos['sheet'] ?? '').toString(),
+        ubicacion: (datos['ubicacion'] ?? '').toString(),
+        responsableEmail: (datos['responsable'] ?? '').toString(),
       );
       if (!mounted) return null;
-      setState(() {
-        _cargando = false;
-        if (nuevo != null) _catalogo.add(nuevo);
-      });
-      _mensaje(
-        nuevo != null
-            ? 'Inventario ${nuevo.id} creado correctamente'
-            : _errorServidor('No se pudo crear el inventario'),
-        color: nuevo != null ? Colors.green : Colors.redAccent,
+      if (nuevo == null) {
+        setState(() => _cargando = false);
+        _mensaje(_errorServidor('No se pudo crear el inventario'),
+            color: Colors.redAccent);
+        return null;
+      }
+      idInventario = nuevo.id;
+    } else {
+      final exito = await AuthService.actualizarInventario(
+        idInventario: inicial.id,
+        nombre: (datos['nombre'] ?? '').toString(),
+        responsableEmail: (datos['responsable'] ?? '').toString(),
+        ubicacion: (datos['ubicacion'] ?? '').toString(),
       );
-      return nuevo;
+      if (!mounted) return null;
+      if (!exito) {
+        setState(() => _cargando = false);
+        _mensaje(_errorServidor('No se pudo actualizar el inventario'),
+            color: Colors.redAccent);
+        return null;
+      }
+      idInventario = inicial.id;
     }
 
-    final exito = await AuthService.actualizarInventario(
-      idInventario: inicial.id,
-      nombre: datos['nombre'] ?? '',
-      responsableEmail: datos['responsable'] ?? '',
-      ubicacion: datos['ubicacion'] ?? '',
-    );
+    bool imagenesOk = true;
+    final logoBytes = datos['logoBytes'] as Uint8List?;
+    final portadaBytes = datos['portadaBytes'] as Uint8List?;
+
+    if (logoBytes != null) {
+      final ok = await AuthService.guardarImagenInventario(
+        idInventario: idInventario,
+        tipo: 'logo',
+        bytes: logoBytes,
+        mime: (datos['logoMime'] ?? 'image/png').toString(),
+      );
+      if (!ok) imagenesOk = false;
+    }
+    if (!mounted) return null;
+    if (portadaBytes != null) {
+      final ok = await AuthService.guardarImagenInventario(
+        idInventario: idInventario,
+        tipo: 'portada',
+        bytes: portadaBytes,
+        mime: (datos['portadaMime'] ?? 'image/jpeg').toString(),
+      );
+      if (!ok) imagenesOk = false;
+    }
     if (!mounted) return null;
 
-    if (exito) {
-      _mensaje('Inventario actualizado');
-      await _cargar();
+    final errorImagen = imagenesOk ? '' : _errorServidor('No se pudo guardar una imagen');
+
+    await AuthService.refrescarInventariosUsuario();
+    if (!mounted) return null;
+    await _cargar();
+    if (!mounted) return null;
+
+    if (!imagenesOk) {
+      _mensaje(
+        'Inventario guardado, pero hubo un problema con las imágenes: $errorImagen',
+        color: const Color(0xFFF59E0B),
+        segundos: 8,
+      );
     } else {
-      setState(() => _cargando = false);
-      _mensaje(_errorServidor('No se pudo actualizar el inventario'),
-          color: Colors.redAccent);
+      _mensaje(inicial == null
+          ? 'Inventario $idInventario creado correctamente'
+          : 'Inventario actualizado');
     }
-    return null;
+
+    if (inicial != null) return null;
+    return _inventarioPorId(idInventario);
   }
 
   Future<void> _crearInventarioDesdeFormulario() async {
@@ -1472,12 +1516,19 @@ class _InventarioDialog extends StatefulWidget {
 
 class _InventarioDialogState extends State<_InventarioDialog> {
   static const primaryPurple = Color(0xFF4A2574);
+  static const int _maxLogo = 600 * 1024;
+  static const int _maxPortada = 1536 * 1024;
 
   late final TextEditingController _nombre;
   late final TextEditingController _sheet;
   late final TextEditingController _ubicacion;
   String? _responsable;
   String? _error;
+
+  Uint8List? _logoBytes;
+  String _logoMime = 'image/png';
+  Uint8List? _portadaBytes;
+  String _portadaMime = 'image/jpeg';
 
   bool get _esEdicion => widget.inicial != null;
 
@@ -1542,6 +1593,131 @@ class _InventarioDialogState extends State<_InventarioDialog> {
     return items;
   }
 
+  Future<void> _elegir(bool esLogo) async {
+    final archivo = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: const ['png', 'jpg', 'jpeg'],
+    );
+    if (archivo == null) return;
+
+    Uint8List bytes;
+    try {
+      bytes = await archivo.readAsBytes();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'No se pudo leer la imagen seleccionada');
+      return;
+    }
+    if (!mounted) return;
+
+    final limite = esLogo ? _maxLogo : _maxPortada;
+    if (bytes.length > limite) {
+      setState(() => _error = esLogo
+          ? 'El logo debe pesar máximo 600 KB'
+          : 'La portada debe pesar máximo 1.5 MB');
+      return;
+    }
+
+    final ext = (archivo.extension ?? '').toLowerCase();
+    final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
+
+    setState(() {
+      _error = null;
+      if (esLogo) {
+        _logoBytes = bytes;
+        _logoMime = mime;
+      } else {
+        _portadaBytes = bytes;
+        _portadaMime = mime;
+      }
+    });
+  }
+
+  Widget _vistaPrevia({
+    required bool esLogo,
+    required Uint8List? bytes,
+    required String fileId,
+  }) {
+    final altura = esLogo ? 70.0 : 90.0;
+    final fallback = Icon(
+      esLogo ? Icons.image_outlined : Icons.photo_size_select_actual_outlined,
+      color: const Color(0xFF9CA3AF),
+      size: 28,
+    );
+
+    Widget contenido;
+    if (bytes != null) {
+      contenido = Image.memory(bytes,
+          fit: esLogo ? BoxFit.contain : BoxFit.cover,
+          width: double.infinity,
+          height: altura);
+    } else if (_esEdicion && fileId.isNotEmpty) {
+      contenido = InventarioImagen(
+        inventarioId: widget.inicial!.id,
+        tipo: esLogo ? 'logo' : 'portada',
+        fileId: fileId,
+        fallback: fallback,
+        fit: esLogo ? BoxFit.contain : BoxFit.cover,
+      );
+    } else {
+      contenido = Center(child: fallback);
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: double.infinity,
+        height: altura,
+        color: const Color(0xFFF3F4F6),
+        child: contenido,
+      ),
+    );
+  }
+
+  Widget _selectorImagen({
+    required String titulo,
+    required String detalle,
+    required bool esLogo,
+    required Uint8List? bytes,
+    required String fileId,
+  }) {
+    final tiene = bytes != null || (_esEdicion && fileId.isNotEmpty);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                titulo,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF374151)),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => _elegir(esLogo),
+              style: TextButton.styleFrom(
+                foregroundColor: primaryPurple,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: const Icon(Icons.upload_file, size: 18),
+              label: Text(tiene ? 'Cambiar' : 'Elegir',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+        _vistaPrevia(esLogo: esLogo, bytes: bytes, fileId: fileId),
+        const SizedBox(height: 4),
+        Text(detalle,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+      ],
+    );
+  }
+
   void _guardar() {
     if (_nombre.text.trim().isEmpty) {
       setState(() => _error = 'El nombre es obligatorio');
@@ -1555,12 +1731,20 @@ class _InventarioDialogState extends State<_InventarioDialog> {
       setState(() => _error = 'Selecciona al responsable del inventario');
       return;
     }
+    if (!_esEdicion && (_logoBytes == null || _portadaBytes == null)) {
+      setState(() => _error = 'Agrega el logo y la portada del inventario');
+      return;
+    }
 
-    Navigator.pop(context, {
+    Navigator.pop(context, <String, dynamic>{
       'nombre': _nombre.text.trim(),
       'sheet': _sheet.text.trim(),
       'ubicacion': _ubicacion.text.trim(),
       'responsable': _responsable!,
+      'logoBytes': _logoBytes,
+      'logoMime': _logoMime,
+      'portadaBytes': _portadaBytes,
+      'portadaMime': _portadaMime,
     });
   }
 
@@ -1572,7 +1756,7 @@ class _InventarioDialogState extends State<_InventarioDialog> {
       title: Text(_esEdicion ? 'Editar inventario' : 'Nuevo inventario',
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
       content: SizedBox(
-        width: 420,
+        width: 440,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1607,6 +1791,26 @@ class _InventarioDialogState extends State<_InventarioDialog> {
                   style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
                 ),
               ],
+              const SizedBox(height: 18),
+              _selectorImagen(
+                titulo: _esEdicion
+                    ? 'LOGO (responsiva)'
+                    : 'LOGO (responsiva) *',
+                detalle: 'PNG o JPG, máximo 600 KB',
+                esLogo: true,
+                bytes: _logoBytes,
+                fileId: widget.inicial?.logoId ?? '',
+              ),
+              const SizedBox(height: 14),
+              _selectorImagen(
+                titulo: _esEdicion
+                    ? 'PORTADA (tarjeta del inventario)'
+                    : 'PORTADA (tarjeta del inventario) *',
+                detalle: 'PNG o JPG, máximo 1.5 MB',
+                esLogo: false,
+                bytes: _portadaBytes,
+                fileId: widget.inicial?.portadaId ?? '',
+              ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
                 Text(_error!,
