@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../models/inventory_model.dart';
@@ -1518,6 +1519,8 @@ class _InventarioDialogState extends State<_InventarioDialog> {
   static const primaryPurple = Color(0xFF4A2574);
   static const int _maxLogo = 600 * 1024;
   static const int _maxPortada = 1536 * 1024;
+  static const int _maxOrigen = 25 * 1024 * 1024;
+  bool _procesando = false;
 
   late final TextEditingController _nombre;
   late final TextEditingController _sheet;
@@ -1593,6 +1596,40 @@ class _InventarioDialogState extends State<_InventarioDialog> {
     return items;
   }
 
+  Future<Uint8List?> _reducir(Uint8List origen, int limite, bool esLogo) async {
+    try {
+      final base = await ui.instantiateImageCodec(origen);
+      final frameBase = await base.getNextFrame();
+      final ancho = frameBase.image.width;
+      final alto = frameBase.image.height;
+      frameBase.image.dispose();
+      base.dispose();
+
+      final mayor = ancho > alto ? ancho : alto;
+      final escalones = esLogo
+          ? <int>[1600, 1200, 900, 700, 550, 420]
+          : <int>[2000, 1600, 1280, 1024, 800, 640];
+
+      for (final objetivo in escalones) {
+        final lado = objetivo < mayor ? objetivo : mayor;
+        final codec = await ui.instantiateImageCodec(
+          origen,
+          targetWidth: ancho >= alto ? lado : null,
+          targetHeight: alto > ancho ? lado : null,
+        );
+        final frame = await codec.getNextFrame();
+        final datos =
+            await frame.image.toByteData(format: ui.ImageByteFormat.png);
+        frame.image.dispose();
+        codec.dispose();
+        if (datos == null) continue;
+        final png = datos.buffer.asUint8List();
+        if (png.length <= limite) return png;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _elegir(bool esLogo) async {
     final archivo = await FilePicker.pickFile(
       type: FileType.custom,
@@ -1610,16 +1647,32 @@ class _InventarioDialogState extends State<_InventarioDialog> {
     }
     if (!mounted) return;
 
-    final limite = esLogo ? _maxLogo : _maxPortada;
-    if (bytes.length > limite) {
-      setState(() => _error = esLogo
-          ? 'El logo debe pesar máximo 600 KB'
-          : 'La portada debe pesar máximo 1.5 MB');
+    if (bytes.length > _maxOrigen) {
+      setState(() => _error = 'La imagen es demasiado grande (máximo 25 MB)');
       return;
     }
 
+    final limite = esLogo ? _maxLogo : _maxPortada;
     final ext = (archivo.extension ?? '').toLowerCase();
-    final mime = ext == 'png' ? 'image/png' : 'image/jpeg';
+    var mime = ext == 'png' ? 'image/png' : 'image/jpeg';
+
+    if (bytes.length > limite) {
+      setState(() {
+        _procesando = true;
+        _error = null;
+      });
+      final reducida = await _reducir(bytes, limite, esLogo);
+      if (!mounted) return;
+      setState(() => _procesando = false);
+      if (reducida == null) {
+        setState(() => _error = esLogo
+            ? 'No se pudo optimizar el logo. Prueba con una imagen más pequeña'
+            : 'No se pudo optimizar la portada. Prueba con una imagen más pequeña');
+        return;
+      }
+      bytes = reducida;
+      mime = 'image/png';
+    }
 
     setState(() {
       _error = null;
@@ -1796,7 +1849,7 @@ class _InventarioDialogState extends State<_InventarioDialog> {
                 titulo: _esEdicion
                     ? 'LOGO (responsiva)'
                     : 'LOGO (responsiva) *',
-                detalle: 'PNG o JPG, máximo 600 KB',
+                detalle: 'PNG o JPG. Si pesa más de 600 KB se optimiza automáticamente',
                 esLogo: true,
                 bytes: _logoBytes,
                 fileId: widget.inicial?.logoId ?? '',
@@ -1806,11 +1859,25 @@ class _InventarioDialogState extends State<_InventarioDialog> {
                 titulo: _esEdicion
                     ? 'PORTADA (tarjeta del inventario)'
                     : 'PORTADA (tarjeta del inventario) *',
-                detalle: 'PNG o JPG, máximo 1.5 MB',
+                detalle: 'PNG o JPG. Si pesa más de 1.5 MB se optimiza automáticamente',
                 esLogo: false,
                 bytes: _portadaBytes,
                 fileId: widget.inicial?.portadaId ?? '',
               ),
+              if (_procesando) ...[
+                const SizedBox(height: 12),
+                const Row(
+                  children: [
+                    SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 8),
+                    Text('Optimizando imagen...',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                  ],
+                ),
+              ],
               if (_error != null) ...[
                 const SizedBox(height: 12),
                 Text(_error!,
@@ -1828,7 +1895,7 @@ class _InventarioDialogState extends State<_InventarioDialog> {
               style: TextStyle(color: Color(0xFF4B5563))),
         ),
         TextButton(
-          onPressed: _guardar,
+          onPressed: _procesando ? null : _guardar,
           child: Text(_esEdicion ? 'Guardar' : 'Crear',
               style: const TextStyle(
                   color: primaryPurple, fontWeight: FontWeight.bold)),
