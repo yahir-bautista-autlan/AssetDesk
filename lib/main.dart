@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'models/inventory_model.dart';
 import 'models/user_model.dart';
 import 'services/auth_service.dart';
@@ -12,18 +15,134 @@ void main() {
   runApp(const AssetDeskApp());
 }
 
-class AssetDeskApp extends StatelessWidget {
+final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<ScaffoldMessengerState> _messengerKey =
+    GlobalKey<ScaffoldMessengerState>();
+
+class InactividadService {
+  static const Duration limite = Duration(minutes: 15);
+  static const Duration _intervaloGuardado = Duration(seconds: 20);
+  static const String _clave = 'last_activity_ms';
+
+  static DateTime _ultima = DateTime.now();
+  static DateTime _ultimaEscritura = DateTime.fromMillisecondsSinceEpoch(0);
+
+  static void registrar({bool forzar = false}) {
+    final ahora = DateTime.now();
+    _ultima = ahora;
+    if (forzar || ahora.difference(_ultimaEscritura) > _intervaloGuardado) {
+      _ultimaEscritura = ahora;
+      _guardar(ahora);
+    }
+  }
+
+  static Future<void> _guardar(DateTime momento) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_clave, momento.millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
+  static bool get expiroEnMemoria =>
+      DateTime.now().difference(_ultima) > limite;
+
+  static Future<bool> expiroEnDisco() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final guardado = prefs.getInt(_clave);
+      if (guardado == null) return false;
+      final ultima = DateTime.fromMillisecondsSinceEpoch(guardado);
+      return DateTime.now().difference(ultima) > limite;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+class AssetDeskApp extends StatefulWidget {
   const AssetDeskApp({super.key});
+
+  @override
+  State<AssetDeskApp> createState() => _AssetDeskAppState();
+}
+
+class _AssetDeskAppState extends State<AssetDeskApp>
+    with WidgetsBindingObserver {
+  Timer? _vigilante;
+  bool _cerrando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_alTeclear);
+    _vigilante = Timer.periodic(const Duration(seconds: 30), (_) => _revisar());
+  }
+
+  @override
+  void dispose() {
+    _vigilante?.cancel();
+    HardwareKeyboard.instance.removeHandler(_alTeclear);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  bool _alTeclear(KeyEvent evento) {
+    InactividadService.registrar();
+    return false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _revisar();
+  }
+
+  Future<void> _revisar() async {
+    if (_cerrando) return;
+    if (AuthService.usuarioCache == null) return;
+    if (!InactividadService.expiroEnMemoria) return;
+
+    _cerrando = true;
+    await AuthService.logout();
+    _navigatorKey.currentState
+        ?.pushNamedAndRemoveUntil('/login', (route) => false);
+    Future.delayed(const Duration(milliseconds: 400), () {
+      _messengerKey.currentState
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Tu sesión se cerró por 15 minutos de inactividad. Inicia sesión de nuevo.'),
+            backgroundColor: Color(0xFF4A2574),
+            duration: Duration(seconds: 8),
+          ),
+        );
+    });
+    InactividadService.registrar();
+    _cerrando = false;
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'AssetDesk',
       debugShowCheckedModeBanner: false,
+      navigatorKey: _navigatorKey,
+      scaffoldMessengerKey: _messengerKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4A2574)),
         useMaterial3: true,
       ),
+      builder: (context, child) {
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => InactividadService.registrar(),
+          onPointerMove: (_) => InactividadService.registrar(),
+          onPointerHover: (_) => InactividadService.registrar(),
+          onPointerSignal: (_) => InactividadService.registrar(),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: const SessionGate(),
       routes: {
         '/login': (_) => const LoginScreen(),
@@ -58,7 +177,29 @@ class _SessionGateState extends State<SessionGate> {
   @override
   void initState() {
     super.initState();
-    _sesion = AuthService.obtenerUsuarioActual();
+    _sesion = _validar();
+  }
+
+  Future<UserModel?> _validar() async {
+    if (await InactividadService.expiroEnDisco()) {
+      await AuthService.logout();
+      Future.delayed(const Duration(milliseconds: 600), () {
+        _messengerKey.currentState
+          ?..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Tu sesión se cerró por 15 minutos de inactividad. Inicia sesión de nuevo.'),
+              backgroundColor: Color(0xFF4A2574),
+              duration: Duration(seconds: 8),
+            ),
+          );
+      });
+      return null;
+    }
+    final usuario = await AuthService.obtenerUsuarioActual();
+    if (usuario != null) InactividadService.registrar(forzar: true);
+    return usuario;
   }
 
   @override
