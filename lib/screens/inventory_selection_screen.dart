@@ -348,8 +348,7 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
                                   constraints.maxWidth > 700 ? 2 : 1;
 
                               return GridView.builder(
-                                padding:
-                                    const EdgeInsets.only(top: 4, bottom: 16),
+                                padding: const EdgeInsets.fromLTRB(8, 14, 8, 20),
                                 gridDelegate:
                                     SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: crossAxisCount,
@@ -433,41 +432,18 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
   }
 
   Widget _buildInventoryCard(BuildContext context, InventoryModel inv) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFECECEC), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
+    return _TarjetaAnimada(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => InventoryDashboardScreen(inventario: inv),
           ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(28),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          hoverColor: Colors.transparent,
-          highlightColor: const Color(0x11000000),
-          splashColor: const Color(0x224A2574),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    InventoryDashboardScreen(inventario: inv),
-              ),
-            );
-          },
-          child: inv.portadaId.isNotEmpty
-              ? _contenidoConPortada(inv)
-              : _contenidoClasico(inv),
-        ),
-      ),
+        );
+      },
+      builder: (activa) => inv.portadaId.isNotEmpty
+          ? _contenidoConPortada(inv, activa)
+          : _contenidoClasico(inv),
     );
   }
 
@@ -544,16 +520,21 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
           );
   }
 
-  Widget _contenidoConPortada(InventoryModel inv) {
+  Widget _contenidoConPortada(InventoryModel inv, bool activa) {
     return Stack(
       fit: StackFit.expand,
       children: [
-        InventarioImagen(
-          inventarioId: inv.id,
-          tipo: 'portada',
-          fileId: inv.portadaId,
-          fit: BoxFit.cover,
-          fallback: Container(color: const Color(0xFFEFE8F6)),
+        AnimatedScale(
+          scale: activa ? 1.05 : 1.0,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+          child: InventarioImagen(
+            inventarioId: inv.id,
+            tipo: 'portada',
+            fileId: inv.portadaId,
+            fit: BoxFit.cover,
+            fallback: Container(color: const Color(0xFFEFE8F6)),
+          ),
         ),
         const DecoratedBox(
           decoration: BoxDecoration(
@@ -604,6 +585,82 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _TarjetaAnimada extends StatefulWidget {
+  final VoidCallback onTap;
+  final Widget Function(bool activa) builder;
+
+  const _TarjetaAnimada({required this.onTap, required this.builder});
+
+  @override
+  State<_TarjetaAnimada> createState() => _TarjetaAnimadaState();
+}
+
+class _TarjetaAnimadaState extends State<_TarjetaAnimada> {
+  bool _hover = false;
+  bool _presionada = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final elevada = _hover && !_presionada;
+    final escala = _presionada ? 0.97 : (_hover ? 1.02 : 1.0);
+    final activa = _hover || _presionada;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        offset: Offset(0, elevada ? -0.025 : 0),
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          scale: escala,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: activa
+                    ? const Color(0xFFD9C8EA)
+                    : const Color(0xFFECECEC),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: activa
+                      ? const Color(0xFF532E7C).withOpacity(0.18)
+                      : Colors.black.withOpacity(0.06),
+                  blurRadius: elevada ? 26 : (_presionada ? 8 : 14),
+                  offset: Offset(0, elevada ? 12 : 4),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(28),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                hoverColor: Colors.transparent,
+                highlightColor: const Color(0x11000000),
+                splashColor: const Color(0x224A2574),
+                onTap: widget.onTap,
+                onTapDown: (_) => setState(() => _presionada = true),
+                onTapUp: (_) => setState(() => _presionada = false),
+                onTapCancel: () => setState(() => _presionada = false),
+                child: widget.builder(activa),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
