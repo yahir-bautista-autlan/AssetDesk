@@ -89,12 +89,47 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   void initState() {
     super.initState();
     _inventarioActivo = widget.inventario;
+    HardwareKeyboard.instance.addHandler(_teclaNavegacion);
     _cargarUsuario();
     _cargarDatosRemotos();
   }
 
+  bool _teclaNavegacion(KeyEvent evento) {
+    if (evento is! KeyDownEvent && evento is! KeyRepeatEvent) return false;
+    final tecla = evento.logicalKey;
+    final derecha = tecla == LogicalKeyboardKey.arrowRight;
+    final izquierda = tecla == LogicalKeyboardKey.arrowLeft;
+    if (!derecha && !izquierda) return false;
+    if (!mounted) return false;
+    if (ModalRoute.of(context)?.isCurrent != true) return false;
+
+    final contextoFoco = FocusManager.instance.primaryFocus?.context;
+    if (contextoFoco != null &&
+        (contextoFoco.widget is EditableText ||
+            contextoFoco.findAncestorWidgetOfExactType<EditableText>() !=
+                null)) {
+      return false;
+    }
+
+    final actual = _tabIndex.value;
+    final nuevo = (actual + (derecha ? 1 : -1)).clamp(0, _tabs.length - 1);
+    if (nuevo == actual) return false;
+    _seleccionarPestana(nuevo);
+    return true;
+  }
+
+  void _seleccionarPestana(int i) {
+    if (_tabIndex.value == i) return;
+    HapticFeedback.selectionClick();
+    _tabIndex.value = i;
+    if (_filtroEstado.value == 'Bajas') {
+      _asegurarBajasCargadas(_tabs[i]);
+    }
+  }
+
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_teclaNavegacion);
     _debounce?.cancel();
     _searchController.dispose();
     _tabIndex.dispose();
@@ -1361,100 +1396,108 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       (Icons.invert_colors, 'Consumibles'),
     ];
 
+    final amplio = MediaQuery.of(context).size.width >= 700;
+    final altoBarra = amplio ? 56.0 : 48.0;
+    final tamIcono = amplio ? 21.0 : 18.0;
+    final tamTexto = amplio ? 11.5 : 10.0;
+
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.only(left: 16, right: 16, bottom: 6, top: 0),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(29),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: Container(
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.75),
-                borderRadius: BorderRadius.circular(29),
-                border: Border.all(color: Colors.white.withOpacity(0.6)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.10),
-                    blurRadius: 24,
-                    offset: const Offset(0, 6),
+      child: Center(
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding:
+                const EdgeInsets.only(left: 16, right: 16, bottom: 8, top: 0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(29),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  height: altoBarra,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.75),
+                    borderRadius: BorderRadius.circular(29),
+                    border: Border.all(color: Colors.white.withOpacity(0.6)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.10),
+                        blurRadius: 24,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final itemWidth = constraints.maxWidth / icons.length;
-                  return ValueListenableBuilder<int>(
-                    valueListenable: _tabIndex,
-                    builder: (context, current, _) {
-                      return Stack(
-                        children: [
-                          AnimatedPositioned(
-                            duration: const Duration(milliseconds: 260),
-                            curve: Curves.easeOutCubic,
-                            left: itemWidth * current + 6,
-                            top: 6,
-                            bottom: 6,
-                            width: itemWidth - 12,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: lightPurpleBg,
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                            ),
-                          ),
-                          Row(
-                            children: List.generate(icons.length, (i) {
-                              final selected = current == i;
-                              final (icon, label) = icons[i];
-                              return SizedBox(
-                                width: itemWidth,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () {
-                                    if (current != i) {
-                                      HapticFeedback.selectionClick();
-                                      _tabIndex.value = i;
-                                      if (_filtroEstado.value == 'Bajas') {
-                                        _asegurarBajasCargadas(_tabs[i]);
-                                      }
-                                    }
-                                  },
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        icon,
-                                        color: selected
-                                            ? primaryPurple
-                                            : Colors.grey.shade600,
-                                        size: 18,
-                                      ),
-                                      const SizedBox(height: 1),
-                                      Text(
-                                        label,
-                                        style: TextStyle(
-                                          color: selected
-                                              ? primaryPurple
-                                              : Colors.grey.shade600,
-                                          fontWeight: selected
-                                              ? FontWeight.bold
-                                              : FontWeight.w500,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                    ],
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final itemWidth = constraints.maxWidth / icons.length;
+                      return ValueListenableBuilder<int>(
+                        valueListenable: _tabIndex,
+                        builder: (context, current, _) {
+                          return Stack(
+                            children: [
+                              AnimatedPositioned(
+                                duration: const Duration(milliseconds: 260),
+                                curve: Curves.easeOutCubic,
+                                left: itemWidth * current + 6,
+                                top: 6,
+                                bottom: 6,
+                                width: itemWidth - 12,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: lightPurpleBg,
+                                    borderRadius: BorderRadius.circular(18),
                                   ),
                                 ),
-                              );
-                            }),
-                          ),
-                        ],
+                              ),
+                              Row(
+                                children: List.generate(icons.length, (i) {
+                                  final selected = current == i;
+                                  final (icon, label) = icons[i];
+                                  return SizedBox(
+                                    width: itemWidth,
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () => _seleccionarPestana(i),
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              icon,
+                                              color: selected
+                                                  ? primaryPurple
+                                                  : Colors.grey.shade600,
+                                              size: tamIcono,
+                                            ),
+                                            const SizedBox(height: 1),
+                                            Text(
+                                              label,
+                                              style: TextStyle(
+                                                color: selected
+                                                    ? primaryPurple
+                                                    : Colors.grey.shade600,
+                                                fontWeight: selected
+                                                    ? FontWeight.bold
+                                                    : FontWeight.w500,
+                                                fontSize: tamTexto,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }),
+                              ),
+                            ],
+                          );
+                        },
                       );
                     },
-                  );
-                },
+                  ),
+                ),
               ),
             ),
           ),
