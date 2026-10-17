@@ -67,6 +67,7 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
   void initState() {
     super.initState();
     AuthService.guardarSitio(widget.inventario.id, -1);
+    AuthService.precargarInventario(widget.inventario.spreadsheetId);
     if (widget.restaurarDashboard) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _abrir(null);

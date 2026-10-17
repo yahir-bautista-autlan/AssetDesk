@@ -48,8 +48,13 @@ class AuthService {
     return digest.toString().toLowerCase();
   }
 
+  static int _generacionCache = 0;
+  static final Map<String, Future<Map<String, dynamic>?>> _pestanasEnCurso = {};
+
   static void _invalidarCache() {
+    _generacionCache++;
     _cache.clear();
+    _pestanasEnCurso.clear();
   }
 
   static dynamic _leerCache(String key) {
@@ -71,19 +76,37 @@ class AuthService {
     return _usuarioActual?.correo ?? '';
   }
 
-  static Future<Map<String, dynamic>?> _post(Map<String, dynamic> body) async {
-    ultimoError = '';
-    ultimoMensaje = '';
-    ultimaRespuestaPendiente = false;
-    ultimaFila = null;
-    ultimaFilaBaja = null;
+  static final String sesionId = _generarSesionId();
+
+  static String _generarSesionId() {
+    final r = DateTime.now().microsecondsSinceEpoch;
+    return 's${r.toRadixString(36)}${(r * 7919 % 1000003).toRadixString(36)}';
+  }
+
+  static Future<Map<String, dynamic>?> _post(Map<String, dynamic> body,
+      {bool lectura = false, bool sondeo = false}) async {
+    final errorPrevio = ultimoError;
+    final resultado = await _postInterno(body, lectura: lectura || sondeo);
+    if (sondeo) ultimoError = errorPrevio;
+    return resultado;
+  }
+
+  static Future<Map<String, dynamic>?> _postInterno(Map<String, dynamic> body,
+      {bool lectura = false}) async {
+    if (!lectura) {
+      ultimoError = '';
+      ultimoMensaje = '';
+      ultimaRespuestaPendiente = false;
+      ultimaFila = null;
+      ultimaFilaBaja = null;
+    }
 
     try {
       var response = await http
           .post(
             Uri.parse(scriptUrl),
             headers: {'Content-Type': 'text/plain;charset=utf-8'},
-            body: jsonEncode(body),
+            body: jsonEncode({...body, 'sesion': sesionId}),
           )
           .timeout(_timeout);
 
@@ -108,13 +131,16 @@ class AuthService {
       if (response.statusCode == 200) {
         try {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
-          ultimoMensaje = (data['message'] ?? '').toString();
-          ultimaRespuestaPendiente = data['pendienteAprobacion'] == true;
-          if (data['fila'] is Map) {
-            ultimaFila = Map<String, dynamic>.from(data['fila'] as Map);
-          }
-          if (data['filaBaja'] is Map) {
-            ultimaFilaBaja = Map<String, dynamic>.from(data['filaBaja'] as Map);
+          if (!lectura) {
+            ultimoMensaje = (data['message'] ?? '').toString();
+            ultimaRespuestaPendiente = data['pendienteAprobacion'] == true;
+            if (data['fila'] is Map) {
+              ultimaFila = Map<String, dynamic>.from(data['fila'] as Map);
+            }
+            if (data['filaBaja'] is Map) {
+              ultimaFilaBaja =
+                  Map<String, dynamic>.from(data['filaBaja'] as Map);
+            }
           }
           if (data['status'] != 'success') {
             ultimoError = (data['message'] ?? 'Error desconocido').toString();
@@ -346,6 +372,84 @@ class AuthService {
       return resultado;
     }
     return {};
+  }
+
+  static Future<Map<String, dynamic>?> obtenerPestana(
+      String spreadsheetIdOrUrl, String pestana,
+      {bool forzar = false}) {
+    final cacheKey = 'pest_${spreadsheetIdOrUrl}_$pestana';
+    if (!forzar) {
+      final cacheado = _leerCache(cacheKey);
+      if (cacheado != null) {
+        return Future.value(Map<String, dynamic>.from(cacheado));
+      }
+      final enCurso = _pestanasEnCurso[cacheKey];
+      if (enCurso != null) return enCurso;
+    }
+
+    final generacion = _generacionCache;
+    final futuro = _pedirPestana(spreadsheetIdOrUrl, pestana, forzar)
+        .then((resultado) {
+      if (resultado != null && generacion == _generacionCache) {
+        _guardarCache(cacheKey, resultado);
+      }
+      return resultado;
+    }).whenComplete(() {
+      if (generacion == _generacionCache) _pestanasEnCurso.remove(cacheKey);
+    });
+    if (generacion == _generacionCache) _pestanasEnCurso[cacheKey] = futuro;
+    return futuro;
+  }
+
+  static Future<Map<String, dynamic>?> _pedirPestana(
+      String spreadsheetIdOrUrl, String pestana, bool forzar) async {
+    final data = await _post({
+      'action': 'obtenerPestana',
+      'actorEmail': await _actor(),
+      'spreadsheetId': spreadsheetIdOrUrl,
+      'pestana': pestana,
+      'forzar': forzar,
+    }, lectura: true);
+    if (_ok(data) && data!['data'] is Map) {
+      return Map<String, dynamic>.from(data['data'] as Map);
+    }
+    return null;
+  }
+
+  static void precargarInventario(String spreadsheetIdOrUrl,
+      {String primera = 'Captura'}) {
+    if (spreadsheetIdOrUrl.isEmpty) return;
+    const todas = ['Captura', 'Impresoras', 'Otros', 'Consumibles'];
+    for (final p in [primera, ...todas.where((t) => t != primera)]) {
+      obtenerPestana(spreadsheetIdOrUrl, p);
+    }
+  }
+
+  static Future<Map<String, dynamic>?> obtenerCambios(
+      String spreadsheetIdOrUrl) async {
+    final data = await _post({
+      'action': 'obtenerCambios',
+      'actorEmail': await _actor(),
+      'spreadsheetId': spreadsheetIdOrUrl,
+    }, sondeo: true);
+    if (_ok(data) && data!['registro'] is Map) {
+      return Map<String, dynamic>.from(data['registro'] as Map);
+    }
+    return null;
+  }
+
+  static void olvidarDatos(String spreadsheetIdOrUrl,
+      {String? pestana, bool bajas = false, bool solicitudes = false}) {
+    _generacionCache++;
+    if (pestana != null) {
+      final k = bajas
+          ? 'bajas_${spreadsheetIdOrUrl}_$pestana'
+          : 'pest_${spreadsheetIdOrUrl}_$pestana';
+      _cache.remove(k);
+      _pestanasEnCurso.remove(k);
+    }
+    if (solicitudes) _cache.remove('pend_count');
+    _cache.remove('inv_$spreadsheetIdOrUrl');
   }
 
   static Future<Map<String, dynamic>> obtenerHojaBajas(

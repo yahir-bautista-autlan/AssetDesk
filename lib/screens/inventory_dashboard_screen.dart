@@ -52,7 +52,8 @@ class InventoryDashboardScreen extends StatefulWidget {
       _InventoryDashboardScreenState();
 }
 
-class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
+class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
+    with WidgetsBindingObserver {
   static const primaryPurple = Color(0xFF532E7C);
   static const lightPurpleBg = Color(0xFFEFE8F6);
 
@@ -112,6 +113,15 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   int _pendientes = 0;
 
   int _datosVersion = 0;
+  int _generacionCarga = 0;
+  Timer? _timerSync;
+  bool _sondeando = false;
+  bool _enPrimerPlano = true;
+  int _fallosSync = 0;
+  int _saltarSondeos = 0;
+  Map<String, dynamic>? _registroSync;
+  Future<void>? _cargaTotal;
+  final Set<String> _pestanasEnCarga = {};
   String _memoKey = '';
   (List<String>, List<dynamic>)? _memoResultado;
   final Map<String, List<String>> _indiceBusqueda = {};
@@ -134,15 +144,134 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     super.initState();
     _inventarioActivo = widget.inventario;
     HardwareKeyboard.instance.addHandler(_teclaNavegacion);
+    WidgetsBinding.instance.addObserver(this);
+    _cargarUsuario();
+    _iniciar();
+  }
+
+  Future<void> _iniciar() async {
     final inicial = widget.pestanaInicial;
     if (inicial != null && inicial >= 0 && inicial < _tabs.length) {
       _tabIndex.value = inicial;
       AuthService.guardarSitio(_inventarioActivo?.id ?? '', inicial);
     } else {
-      _restaurarPestana();
+      await _restaurarPestana();
     }
-    _cargarUsuario();
+    if (!mounted) return;
+    final ss = _inventarioActivo?.spreadsheetId ?? '';
+    if (ss.isNotEmpty) {
+      AuthService.obtenerCambios(ss).then((r) {
+        if (mounted && _registroSync == null && r != null) _registroSync = r;
+      });
+    }
     _cargarDatosRemotos();
+    _timerSync?.cancel();
+    _timerSync =
+        Timer.periodic(const Duration(seconds: 4), (_) => _sondearCambios());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _enPrimerPlano = state == AppLifecycleState.resumed;
+    if (_enPrimerPlano) _sondearCambios();
+  }
+
+  Future<void> _sondearCambios() async {
+    if (!mounted || _sondeando || !_enPrimerPlano || _isLoading) return;
+    if (_saltarSondeos > 0) {
+      _saltarSondeos--;
+      return;
+    }
+    final ss = _inventarioActivo?.spreadsheetId ?? '';
+    if (ss.isEmpty) return;
+
+    _sondeando = true;
+    try {
+      final registro = await AuthService.obtenerCambios(ss);
+      if (!mounted) return;
+      if (registro == null) {
+        _fallosSync++;
+        _saltarSondeos = _fallosSync.clamp(1, 6);
+        return;
+      }
+      _fallosSync = 0;
+      final previo = _registroSync;
+      _registroSync = registro;
+      if (previo == null) return;
+      await _aplicarCambiosRemotos(previo, registro);
+    } finally {
+      _sondeando = false;
+    }
+  }
+
+  Future<void> _aplicarCambiosRemotos(
+      Map<String, dynamic> previo, Map<String, dynamic> nuevo) async {
+    final ss = _inventarioActivo?.spreadsheetId ?? '';
+    final yo = AuthService.sesionId;
+    final pestanas = <String>{};
+    final bajas = <String>{};
+    var solicitudes = false;
+
+    if (previo['_e'] != nuevo['_e']) {
+      pestanas.addAll(_tabs);
+      solicitudes = true;
+    }
+
+    nuevo.forEach((clave, valor) {
+      if (clave == '_e' || valor is! Map) return;
+      final antes = previo[clave];
+      final tPrevio = antes is Map ? antes['t'] : null;
+      if (tPrevio == valor['t']) return;
+      if (valor['s'] == yo) return;
+      if (clave == '_solicitudes') {
+        solicitudes = true;
+      } else if (clave.startsWith('Bajas:')) {
+        bajas.add(clave.substring(6));
+      } else if (_tabs.contains(clave)) {
+        pestanas.add(clave);
+      }
+    });
+
+    if (pestanas.isEmpty && bajas.isEmpty && !solicitudes) return;
+
+    final generacion = _generacionCarga;
+    final actual = _tabs[_tabIndex.value];
+    var tocoVista = false;
+
+    if (pestanas.isNotEmpty) {
+      for (final t in pestanas) {
+        AuthService.olvidarDatos(ss, pestana: t);
+      }
+      final lista = pestanas.toList();
+      final resultados =
+          await Future.wait(lista.map((t) => AuthService.obtenerPestana(ss, t)));
+      if (!mounted || generacion != _generacionCarga) return;
+      for (var i = 0; i < lista.length; i++) {
+        final raw = resultados[i];
+        if (raw == null) continue;
+        _aplicarPestana(lista[i], raw, conservar: true);
+        if (lista[i] == actual && _filtroEstado.value != 'Bajas') {
+          tocoVista = true;
+        }
+      }
+    }
+
+    for (final b in bajas) {
+      if (!_datosHojas.containsKey(_dataKeyFor(b, 'Bajas'))) continue;
+      AuthService.olvidarDatos(ss, pestana: b, bajas: true);
+      await _asegurarBajasCargadas(b, refrescar: true);
+      if (!mounted) return;
+      if (b == actual && _filtroEstado.value == 'Bajas') tocoVista = true;
+    }
+
+    if (solicitudes) {
+      AuthService.olvidarDatos(ss, solicitudes: true);
+      if (_puedeAprobar) _cargarPendientes();
+    }
+
+    if (!mounted) return;
+    setState(() {});
+    if (tocoVista) _mostrarAviso('Tabla actualizada', primaryPurple, duracion: 2);
   }
 
   Future<void> _restaurarPestana() async {
@@ -274,6 +403,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     HapticFeedback.selectionClick();
     _tabIndex.value = i;
     AuthService.guardarSitio(_inventarioActivo?.id ?? '', i);
+    _asegurarPestana(_tabs[i]);
     if (_filtroEstado.value == 'Bajas') {
       _asegurarBajasCargadas(_tabs[i]);
     }
@@ -282,6 +412,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_teclaNavegacion);
+    WidgetsBinding.instance.removeObserver(this);
+    _timerSync?.cancel();
     _timerResalte?.cancel();
     _hCtrl.dispose();
     _vCtrl.dispose();
@@ -639,10 +771,10 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   }
 
   Future<void> _asegurarBajasCargadas(String nombrePestana,
-      {bool forzar = false}) async {
+      {bool forzar = false, bool refrescar = false}) async {
     final key = _dataKeyFor(nombrePestana, 'Bajas');
     if (_bajasEnCarga.contains(key)) return;
-    if (!forzar && _datosHojas.containsKey(key)) return;
+    if (!forzar && !refrescar && _datosHojas.containsKey(key)) return;
 
     _bajasEnCarga.add(key);
     if (mounted) setState(() {});
@@ -655,14 +787,26 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     _bajasEnCarga.remove(key);
     if (!mounted) return;
 
+    if (refrescar &&
+        (procesado['headers'] as List).isEmpty &&
+        _datosHojas.containsKey(key)) {
+      setState(() {});
+      return;
+    }
+
     _datosCambiaron();
     setState(() {
       _datosHojas[key] = procesado;
     });
 
-    final nuevoMapa = Map<String, Set<String>>.from(_columnasPorPestana.value);
-    nuevoMapa[key] = Set<String>.from(procesado['headers'] as List<String>);
-    _columnasPorPestana.value = nuevoMapa;
+    final todas = Set<String>.from(procesado['headers'] as List<String>);
+    final previas = _columnasPorPestana.value[key];
+    var columnas = todas;
+    if (refrescar && previas != null) {
+      final conservadas = previas.where(todas.contains).toSet();
+      if (conservadas.isNotEmpty) columnas = conservadas;
+    }
+    _columnasPorPestana.value = {..._columnasPorPestana.value, key: columnas};
   }
 
   (List<String>, List<dynamic>) _obtenerDatosVisibles() {
@@ -734,6 +878,10 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
 
     if (scannedSN == null || scannedSN.isEmpty) return;
 
+    final carga = _cargaTotal;
+    if (carga != null) await carga;
+    if (!mounted) return;
+
     const mapaSnKey = {
       'Captura': 'Numero de Serie',
       'Impresoras': 'Num. de Serie',
@@ -783,80 +931,107 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   }
 
   Future<void> _cargarDatosRemotos(
-      {bool silencioso = false, bool forzar = false}) async {
+      {bool silencioso = false, bool forzar = false}) {
+    final f = _cargarTodas(silencioso: silencioso, forzar: forzar);
+    _cargaTotal = f;
+    return f;
+  }
+
+  void _aplicarPestana(String pestana, dynamic raw, {required bool conservar}) {
+    final procesado = _procesarHojaData(raw);
+    final todas = Set<String>.from(procesado['headers'] as List<String>);
+    final previas = _columnasPorPestana.value[pestana];
+    Set<String> columnas = todas;
+    if (conservar && previas != null) {
+      final conservadas = previas.where(todas.contains).toSet();
+      if (conservadas.isNotEmpty) columnas = conservadas;
+    }
+    _datosHojas[pestana] = procesado;
+    _datosCambiaron();
+    _columnasPorPestana.value = {..._columnasPorPestana.value, pestana: columnas};
+  }
+
+  void _avisarErrorCarga() {
+    if (!mounted || AuthService.ultimoError.isEmpty) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        width: _anchoAviso(context),
+        content: Text(AuthService.ultimoError),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
+  }
+
+  Future<void> _cargarTodas(
+      {required bool silencioso, required bool forzar}) async {
     if (!silencioso) setState(() => _isLoading = true);
 
-    final sheetIdOrName = _inventarioActivo?.spreadsheetId ?? '';
-    final resultado = await AuthService.obtenerDatosInventario(sheetIdOrName,
-        forzar: forzar);
+    final id = _inventarioActivo?.spreadsheetId ?? '';
+    final prioritaria = _tabs[_tabIndex.value];
+    final orden = [prioritaria, ..._tabs.where((t) => t != prioritaria)];
+    final generacion = ++_generacionCarga;
 
-    if (!mounted) return;
-
-    if (silencioso && resultado.isEmpty) {
-      if (AuthService.ultimoError.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            width: _anchoAviso(context),
-            content: Text(AuthService.ultimoError),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-      return;
+    if (!silencioso) {
+      _pestanasEnCarga
+        ..clear()
+        ..addAll(orden);
     }
 
-    final datosProcesados = <String, dynamic>{};
-    final columnasIniciales = <String, Set<String>>{};
-    final columnasPrevias = _columnasPorPestana.value;
+    final futuros = {
+      for (final t in orden) t: AuthService.obtenerPestana(id, t, forzar: forzar)
+    };
 
-    resultado.forEach((pestana, data) {
-      final procesado = _procesarHojaData(data);
-      datosProcesados[pestana] = procesado;
-      final todas = Set<String>.from(procesado['headers'] as List<String>);
-      final previas = columnasPrevias[pestana];
-      if (silencioso && previas != null) {
-        final conservadas = previas.where(todas.contains).toSet();
-        columnasIniciales[pestana] = conservadas.isEmpty ? todas : conservadas;
+    var huboError = false;
+
+    Future<void> recibir(String t) async {
+      final raw = await futuros[t]!;
+      if (!mounted || generacion != _generacionCarga) return;
+      _pestanasEnCarga.remove(t);
+      if (raw == null) {
+        huboError = true;
       } else {
-        columnasIniciales[pestana] = todas;
+        _aplicarPestana(t, raw, conservar: silencioso);
       }
-    });
-
-    if (silencioso) {
-      _datosHojas.forEach((clave, valor) {
-        if (clave.contains('__Bajas')) {
-          datosProcesados[clave] = valor;
-          final previas = columnasPrevias[clave];
-          if (previas != null) columnasIniciales[clave] = previas;
-        }
-      });
+      if (!silencioso && t == prioritaria) {
+        setState(() => _isLoading = false);
+      } else {
+        setState(() {});
+      }
     }
 
-    _datosCambiaron();
-    setState(() {
-      _datosHojas = datosProcesados;
-      if (!silencioso) _bajasEnCarga.clear();
-      _isLoading = false;
-    });
-    _columnasPorPestana.value = columnasIniciales;
+    await Future.wait(orden.map(recibir));
+    if (!mounted || generacion != _generacionCarga) return;
+
+    if (_isLoading) setState(() => _isLoading = false);
 
     if (!silencioso &&
         _filtroEstado.value == 'Bajas' &&
-        !datosProcesados.containsKey(_dataKeyFor(_tabs[_tabIndex.value], 'Bajas'))) {
+        !_datosHojas.containsKey(_dataKeyFor(_tabs[_tabIndex.value], 'Bajas'))) {
       _asegurarBajasCargadas(_tabs[_tabIndex.value]);
     }
 
-    if (resultado.isEmpty && AuthService.ultimoError.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          width: _anchoAviso(context),
-          content: Text(AuthService.ultimoError),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+    if (huboError) _avisarErrorCarga();
+  }
+
+  Future<void> _asegurarPestana(String pestana) async {
+    if (_datosHojas.containsKey(pestana) || _pestanasEnCarga.contains(pestana)) {
+      return;
     }
+    _pestanasEnCarga.add(pestana);
+    if (mounted) setState(() {});
+
+    final raw = await AuthService.obtenerPestana(
+        _inventarioActivo?.spreadsheetId ?? '', pestana);
+    if (!mounted) return;
+
+    _pestanasEnCarga.remove(pestana);
+    if (raw != null) {
+      _aplicarPestana(pestana, raw, conservar: false);
+    } else {
+      _avisarErrorCarga();
+    }
+    setState(() {});
   }
 
   void _onSearchChanged(String val) {
@@ -1712,6 +1887,22 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: primaryPurple),
+      );
+    }
+
+    if (filtro != 'Bajas' && !_datosHojas.containsKey(dataKey)) {
+      if (_pestanasEnCarga.contains(nombrePestana)) {
+        return const Center(
+          child: CircularProgressIndicator(color: primaryPurple),
+        );
+      }
+      return Center(
+        child: TextButton.icon(
+          onPressed: () => _asegurarPestana(nombrePestana),
+          icon: const Icon(Icons.refresh_rounded, color: primaryPurple),
+          label: const Text('Reintentar carga',
+              style: TextStyle(color: primaryPurple)),
+        ),
       );
     }
 
