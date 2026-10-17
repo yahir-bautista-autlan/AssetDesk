@@ -85,13 +85,15 @@ class AuthService {
   static Future<Map<String, dynamic>?> _post(Map<String, dynamic> body,
       {bool lectura = false, bool sondeo = false}) async {
     final errorPrevio = ultimoError;
-    final resultado = await _postInterno(body, lectura: lectura || sondeo);
+    final resultado = await _postInterno(body,
+        lectura: lectura || sondeo,
+        limite: sondeo ? const Duration(seconds: 12) : _timeout);
     if (sondeo) ultimoError = errorPrevio;
     return resultado;
   }
 
   static Future<Map<String, dynamic>?> _postInterno(Map<String, dynamic> body,
-      {bool lectura = false}) async {
+      {bool lectura = false, Duration limite = _timeout}) async {
     if (!lectura) {
       ultimoError = '';
       ultimoMensaje = '';
@@ -105,7 +107,7 @@ class AuthService {
             headers: {'Content-Type': 'text/plain;charset=utf-8'},
             body: jsonEncode({...body, 'sesion': sesionId}),
           )
-          .timeout(_timeout);
+          .timeout(limite);
 
       int redirectCount = 0;
       while ((response.statusCode == 301 ||
@@ -117,7 +119,7 @@ class AuthService {
         final location = response.headers['location'];
         if (location == null || location.isEmpty) break;
 
-        response = await http.get(Uri.parse(location)).timeout(_timeout);
+        response = await http.get(Uri.parse(location)).timeout(limite);
         redirectCount++;
       }
 

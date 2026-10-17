@@ -176,7 +176,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _enPrimerPlano = state == AppLifecycleState.resumed;
+    _enPrimerPlano = state != AppLifecycleState.hidden &&
+        state != AppLifecycleState.paused &&
+        state != AppLifecycleState.detached;
     if (_enPrimerPlano) _sondearCambios();
   }
 
