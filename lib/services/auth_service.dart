@@ -19,12 +19,15 @@ class AuthService {
       'https://script.google.com/macros/s/AKfycbxdDGzCjqaXJuwaH76yiVPGjmeo5alpU1hG5PtAuCxw-yRGQmu8GYkP-e-rSWf5P0tY/exec';
 
   static const String _prefsKey = 'user_data';
+  static const String _prefsSitioKey = 'ultimo_sitio';
   static const Duration _timeout = Duration(seconds: 45);
   static const Duration _cacheTtl = Duration(seconds: 90);
 
   static String ultimoError = '';
   static String ultimoMensaje = '';
   static bool ultimaRespuestaPendiente = false;
+  static Map<String, dynamic>? ultimaFila;
+  static Map<String, dynamic>? ultimaFilaBaja;
 
   static UserModel? _usuarioActual;
   static final Map<String, _CacheEntry> _cache = {};
@@ -72,6 +75,8 @@ class AuthService {
     ultimoError = '';
     ultimoMensaje = '';
     ultimaRespuestaPendiente = false;
+    ultimaFila = null;
+    ultimaFilaBaja = null;
 
     try {
       var response = await http
@@ -105,6 +110,12 @@ class AuthService {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
           ultimoMensaje = (data['message'] ?? '').toString();
           ultimaRespuestaPendiente = data['pendienteAprobacion'] == true;
+          if (data['fila'] is Map) {
+            ultimaFila = Map<String, dynamic>.from(data['fila'] as Map);
+          }
+          if (data['filaBaja'] is Map) {
+            ultimaFilaBaja = Map<String, dynamic>.from(data['filaBaja'] as Map);
+          }
           if (data['status'] != 'success') {
             ultimoError = (data['message'] ?? 'Error desconocido').toString();
           }
@@ -315,15 +326,19 @@ class AuthService {
   }
 
   static Future<Map<String, dynamic>> obtenerDatosInventario(
-      String spreadsheetIdOrUrl) async {
+      String spreadsheetIdOrUrl,
+      {bool forzar = false}) async {
     final cacheKey = 'inv_$spreadsheetIdOrUrl';
-    final cacheado = _leerCache(cacheKey);
-    if (cacheado != null) return Map<String, dynamic>.from(cacheado);
+    if (!forzar) {
+      final cacheado = _leerCache(cacheKey);
+      if (cacheado != null) return Map<String, dynamic>.from(cacheado);
+    }
 
     final data = await _post({
       'action': 'obtenerDatosInventario',
       'actorEmail': await _actor(),
       'spreadsheetId': spreadsheetIdOrUrl,
+      'forzar': forzar,
     });
     if (_ok(data) && data!['pestañas'] != null) {
       final resultado = Map<String, dynamic>.from(data['pestañas']);
@@ -334,16 +349,20 @@ class AuthService {
   }
 
   static Future<Map<String, dynamic>> obtenerHojaBajas(
-      String spreadsheetIdOrUrl, String pestana) async {
+      String spreadsheetIdOrUrl, String pestana,
+      {bool forzar = false}) async {
     final cacheKey = 'bajas_${spreadsheetIdOrUrl}_$pestana';
-    final cacheado = _leerCache(cacheKey);
-    if (cacheado != null) return Map<String, dynamic>.from(cacheado);
+    if (!forzar) {
+      final cacheado = _leerCache(cacheKey);
+      if (cacheado != null) return Map<String, dynamic>.from(cacheado);
+    }
 
     final data = await _post({
       'action': 'obtenerHojaBajas',
       'actorEmail': await _actor(),
       'spreadsheetId': spreadsheetIdOrUrl,
       'pestana': pestana,
+      'forzar': forzar,
     });
     if (_ok(data) && data!['data'] != null) {
       final resultado = Map<String, dynamic>.from(data['data']);
@@ -481,6 +500,51 @@ class AuthService {
     });
     if (_ok(data)) _invalidarCache();
     return _ok(data);
+  }
+
+  static Future<bool> revertirBaja({
+    required String spreadsheetId,
+    required String pestana,
+    required String sn,
+  }) async {
+    final data = await _post({
+      'action': 'revertirBaja',
+      'actorEmail': await _actor(),
+      'spreadsheetId': spreadsheetId,
+      'pestana': pestana,
+      'sn': sn,
+    });
+    if (_ok(data)) _invalidarCache();
+    return _ok(data);
+  }
+
+  static Future<void> guardarSitio(String inventarioId, int pestana) async {
+    if (inventarioId.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsSitioKey, '$inventarioId|$pestana');
+    } catch (_) {}
+  }
+
+  static Future<(String, int)?> leerSitio() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsSitioKey);
+      if (raw == null || raw.isEmpty) return null;
+      final partes = raw.split('|');
+      if (partes.length != 2) return null;
+      final pestana = int.tryParse(partes[1]) ?? 0;
+      return (partes[0], pestana);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> olvidarSitio() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefsSitioKey);
+    } catch (_) {}
   }
 
   static Future<bool> transferirActivo({

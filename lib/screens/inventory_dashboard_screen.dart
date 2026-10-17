@@ -18,25 +18,34 @@ import 'qr_scanner_screen.dart';
 import 'qr_view_screen.dart';
 import 'responsiva_preview_screen.dart';
 
+double? _anchoAviso(BuildContext context) =>
+    MediaQuery.sizeOf(context).width > 640 ? 420 : null;
+
 bool _avisarSiPendiente(BuildContext context) {
   if (!AuthService.ultimaRespuestaPendiente) return false;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
+      behavior: SnackBarBehavior.floating,
+      width: _anchoAviso(context),
       content: Text(AuthService.ultimoMensaje.isEmpty
           ? 'Tu cambio fue enviado al responsable del inventario para su aprobación.'
           : AuthService.ultimoMensaje),
       backgroundColor: const Color(0xFFF59E0B),
       duration: const Duration(seconds: 6),
-      behavior: SnackBarBehavior.floating,
-    ),
+          ),
   );
   return true;
 }
 
 class InventoryDashboardScreen extends StatefulWidget {
   final InventoryModel? inventario;
+  final int? pestanaInicial;
 
-  const InventoryDashboardScreen({super.key, this.inventario});
+  const InventoryDashboardScreen({
+    super.key,
+    this.inventario,
+    this.pestanaInicial,
+  });
 
   @override
   State<InventoryDashboardScreen> createState() =>
@@ -57,6 +66,41 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   final ValueNotifier<Map<String, Set<String>>> _columnasPorPestana =
       ValueNotifier({});
 
+  final ValueNotifier<String> _snResaltado = ValueNotifier('');
+  final ScrollController _hCtrl = ScrollController();
+  final ScrollController _vCtrl = ScrollController();
+
+  static final ScrollbarThemeData _temaBarras = ScrollbarThemeData(
+    thickness: WidgetStateProperty.resolveWith(
+        (e) => e.contains(WidgetState.hovered) ? 8.0 : 5.0),
+    radius: const Radius.circular(8),
+    thumbColor: WidgetStateProperty.resolveWith((e) =>
+        e.contains(WidgetState.hovered) || e.contains(WidgetState.dragged)
+            ? const Color(0xFF9B87BA)
+            : const Color(0x669B87BA)),
+    trackVisibility: const WidgetStatePropertyAll(false),
+    thumbVisibility: const WidgetStatePropertyAll(false),
+    crossAxisMargin: 2,
+    mainAxisMargin: 2,
+  );
+
+  static const BoxDecoration _bordeFila = BoxDecoration(
+    border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1)),
+  );
+  Timer? _timerResalte;
+
+  static const Map<String, List<String>> _snPorPestana = {
+    'Captura': ['Numero de Serie', 'Número de Serie', 'Numero de serie'],
+    'Impresoras': ['Num. de Serie', 'Numero de Serie', 'Número de serie'],
+    'Otros': ['NoSerie', 'Numero de Serie'],
+    'Consumibles': [
+      'Numero de serie',
+      'Número de serie',
+      'Numero de Serie',
+      'NoSerie'
+    ],
+  };
+
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
 
@@ -75,7 +119,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   late final Listenable _headerListenable =
       Listenable.merge([_tabIndex, _filtroEstado]);
   late final Listenable _tableListenable = Listenable.merge(
-      [_tabIndex, _searchQuery, _filtroEstado, _columnasPorPestana]);
+      [_tabIndex, _searchQuery, _filtroEstado, _columnasPorPestana, _snResaltado]);
 
   bool get _puedeEditar => _user?.puedeEditar ?? AuthService.puedeEditar;
 
@@ -90,17 +134,90 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     super.initState();
     _inventarioActivo = widget.inventario;
     HardwareKeyboard.instance.addHandler(_teclaNavegacion);
+    final inicial = widget.pestanaInicial;
+    if (inicial != null && inicial >= 0 && inicial < _tabs.length) {
+      _tabIndex.value = inicial;
+      AuthService.guardarSitio(_inventarioActivo?.id ?? '', inicial);
+    } else {
+      _restaurarPestana();
+    }
     _cargarUsuario();
     _cargarDatosRemotos();
   }
 
+  Future<void> _restaurarPestana() async {
+    final id = _inventarioActivo?.id ?? '';
+    if (id.isEmpty) return;
+    final sitio = await AuthService.leerSitio();
+    if (!mounted) return;
+    if (sitio != null &&
+        sitio.$1 == id &&
+        sitio.$2 >= 0 &&
+        sitio.$2 < _tabs.length) {
+      _tabIndex.value = sitio.$2;
+    }
+    AuthService.guardarSitio(id, _tabIndex.value);
+  }
+
+  String _normClave(String s) {
+    return s
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .trim();
+  }
+
+  String _normSn(dynamic v) => v == null ? '' : v.toString().toLowerCase().trim();
+
+  String? _headerSn(Iterable<dynamic> headers, String pestana) {
+    final candidatos =
+        (_snPorPestana[pestana] ?? const <String>[]).map(_normClave).toSet();
+    for (final h in headers) {
+      if (candidatos.contains(_normClave(h.toString()))) return h.toString();
+    }
+    return null;
+  }
+
+  String _snDeFila(Map fila, String pestana) {
+    final h = _headerSn(fila.keys, pestana);
+    return h == null ? '' : _normSn(fila[h]);
+  }
+
+  Set<String> _snsDe(String pestana) {
+    final data = _datosHojas[pestana];
+    if (data is! Map) return <String>{};
+    final rows = data['rows'] as List<dynamic>? ?? [];
+    final resultado = <String>{};
+    for (final r in rows) {
+      if (r is Map) {
+        final sn = _snDeFila(r, pestana);
+        if (sn.isNotEmpty) resultado.add(sn);
+      }
+    }
+    return resultado;
+  }
+
   bool _teclaNavegacion(KeyEvent evento) {
     if (evento is! KeyDownEvent && evento is! KeyRepeatEvent) return false;
-    final tecla = evento.logicalKey;
-    final derecha = tecla == LogicalKeyboardKey.arrowRight;
-    final izquierda = tecla == LogicalKeyboardKey.arrowLeft;
-    if (!derecha && !izquierda) return false;
     if (!mounted) return false;
+    final kb = HardwareKeyboard.instance;
+    if (kb.isControlPressed || kb.isMetaPressed || kb.isAltPressed) {
+      return false;
+    }
+
+    final tecla = evento.logicalKey;
+    final esFlecha = tecla == LogicalKeyboardKey.arrowRight ||
+        tecla == LogicalKeyboardKey.arrowLeft ||
+        tecla == LogicalKeyboardKey.arrowDown ||
+        tecla == LogicalKeyboardKey.arrowUp ||
+        tecla == LogicalKeyboardKey.pageDown ||
+        tecla == LogicalKeyboardKey.pageUp ||
+        tecla == LogicalKeyboardKey.home ||
+        tecla == LogicalKeyboardKey.end;
+    if (!esFlecha) return false;
     if (ModalRoute.of(context)?.isCurrent != true) return false;
 
     final contextoFoco = FocusManager.instance.primaryFocus?.context;
@@ -111,17 +228,52 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       return false;
     }
 
-    final actual = _tabIndex.value;
-    final nuevo = (actual + (derecha ? 1 : -1)).clamp(0, _tabs.length - 1);
-    if (nuevo == actual) return false;
-    _seleccionarPestana(nuevo);
+    if (tecla == LogicalKeyboardKey.arrowRight) {
+      _desplazar(_hCtrl, 140);
+    } else if (tecla == LogicalKeyboardKey.arrowLeft) {
+      _desplazar(_hCtrl, -140);
+    } else if (tecla == LogicalKeyboardKey.arrowDown) {
+      _desplazar(_vCtrl, 104);
+    } else if (tecla == LogicalKeyboardKey.arrowUp) {
+      _desplazar(_vCtrl, -104);
+    } else if (tecla == LogicalKeyboardKey.pageDown) {
+      _desplazar(_vCtrl, _paginaVertical());
+    } else if (tecla == LogicalKeyboardKey.pageUp) {
+      _desplazar(_vCtrl, -_paginaVertical());
+    } else if (tecla == LogicalKeyboardKey.home) {
+      _irA(_vCtrl, 0);
+    } else {
+      _irA(_vCtrl, double.infinity);
+    }
     return true;
+  }
+
+  double _paginaVertical() {
+    if (!_vCtrl.hasClients) return 0;
+    return _vCtrl.position.viewportDimension * 0.9;
+  }
+
+  void _desplazar(ScrollController c, double delta) {
+    if (!c.hasClients) return;
+    final pos = c.position;
+    final destino =
+        (pos.pixels + delta).clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    if (destino == pos.pixels) return;
+    c.animateTo(destino,
+        duration: const Duration(milliseconds: 90), curve: Curves.easeOut);
+  }
+
+  void _irA(ScrollController c, double destino) {
+    if (!c.hasClients) return;
+    final pos = c.position;
+    c.jumpTo(destino.clamp(pos.minScrollExtent, pos.maxScrollExtent));
   }
 
   void _seleccionarPestana(int i) {
     if (_tabIndex.value == i) return;
     HapticFeedback.selectionClick();
     _tabIndex.value = i;
+    AuthService.guardarSitio(_inventarioActivo?.id ?? '', i);
     if (_filtroEstado.value == 'Bajas') {
       _asegurarBajasCargadas(_tabs[i]);
     }
@@ -130,6 +282,10 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_teclaNavegacion);
+    _timerResalte?.cancel();
+    _hCtrl.dispose();
+    _vCtrl.dispose();
+    _snResaltado.dispose();
     _debounce?.cancel();
     _searchController.dispose();
     _tabIndex.dispose();
@@ -165,7 +321,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       MaterialPageRoute(builder: (_) => const SolicitudesPendientesScreen()),
     );
     if (!mounted) return;
-    if (cambios == true) _cargarDatosRemotos();
+    if (cambios == true) _cargarDatosRemotos(silencioso: true, forzar: true);
     _cargarPendientes();
   }
 
@@ -179,7 +335,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     );
     if (ok == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          width: _anchoAviso(context),
           content: Text('Contraseña actualizada correctamente'),
           backgroundColor: Colors.green,
         ),
@@ -193,10 +351,227 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
-  void _trasCambio() {
+  void _limpiarVistaParaVer() {
+    if (_filtroEstado.value != 'Todos') _filtroEstado.value = 'Todos';
+    if (_searchController.text.isNotEmpty) {
+      _searchController.clear();
+      _searchQuery.value = '';
+    }
+  }
+
+  Future<void> _trasCambio({
+    required String pestana,
+    String sn = '',
+    bool alta = false,
+    bool baja = false,
+    bool revertir = false,
+  }) async {
+    final pendiente = AuthService.ultimaRespuestaPendiente;
     if (mounted) _avisarSiPendiente(context);
-    _cargarDatosRemotos();
+
+    if (pendiente) {
+      if (_puedeAprobar) _cargarPendientes();
+      return;
+    }
+
+    final fila = AuthService.ultimaFila;
+    final filaBaja = AuthService.ultimaFilaBaja;
+    final antes = alta ? _snsDe(pestana) : <String>{};
+
+    final parchado = _aplicarCambioLocal(
+      pestana: pestana,
+      snAnterior: sn,
+      fila: fila,
+      filaBaja: filaBaja,
+      alta: alta,
+      baja: baja,
+      revertir: revertir,
+    );
+
+    if (!mounted) return;
+
+    final indicePestana = _tabs.indexOf(pestana);
+    if (indicePestana >= 0 && _tabIndex.value != indicePestana) {
+      _tabIndex.value = indicePestana;
+    }
+    if (alta || revertir) _limpiarVistaParaVer();
+
+    if (baja) {
+      _mostrarAviso(
+        'Elemento dado de baja',
+        const Color(0xFF4B5563),
+        duracion: 4,
+        etiqueta: 'Ver en Bajas',
+        alPulsar: () {
+          _filtroEstado.value = 'Bajas';
+          _asegurarBajasCargadas(pestana);
+        },
+      );
+    } else if (revertir) {
+      _mostrarAviso('Elemento restaurado en "$pestana"', Colors.green);
+    }
+
     if (_puedeAprobar) _cargarPendientes();
+
+    if (!parchado) {
+      await _cargarDatosRemotos(silencioso: true, forzar: true);
+      if (!mounted) return;
+
+      final claveBajas = _dataKeyFor(pestana, 'Bajas');
+      if (_datosHojas.containsKey(claveBajas) ||
+          (_filtroEstado.value == 'Bajas' &&
+              _tabs[_tabIndex.value] == pestana)) {
+        await _asegurarBajasCargadas(pestana, forzar: true);
+        if (!mounted) return;
+      }
+    }
+
+    if (baja) return;
+
+    String snObjetivo = sn.toLowerCase().trim();
+
+    if (alta) {
+      final nuevos = _snsDe(pestana).difference(antes);
+      snObjetivo = nuevos.isNotEmpty ? nuevos.last : '';
+    } else if (!revertir && fila != null) {
+      final nuevoSn = _snDeFila(fila, pestana);
+      if (nuevoSn.isNotEmpty) snObjetivo = nuevoSn;
+    }
+
+    if (snObjetivo.isNotEmpty) _resaltarFila(snObjetivo);
+  }
+
+  void _mostrarAviso(
+    String texto,
+    Color color, {
+    int duracion = 3,
+    String? etiqueta,
+    VoidCallback? alPulsar,
+  }) {
+    final m = ScaffoldMessenger.of(context);
+    m.hideCurrentSnackBar();
+    m.showSnackBar(
+      SnackBar(
+        content: Text(texto),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        width: _anchoAviso(context),
+        duration: Duration(seconds: duracion),
+        action: etiqueta == null
+            ? null
+            : SnackBarAction(
+                label: etiqueta,
+                textColor: Colors.white,
+                onPressed: alPulsar ?? () {},
+              ),
+      ),
+    );
+  }
+
+  bool _aplicarCambioLocal({
+    required String pestana,
+    required String snAnterior,
+    required Map<String, dynamic>? fila,
+    required Map<String, dynamic>? filaBaja,
+    required bool alta,
+    required bool baja,
+    required bool revertir,
+  }) {
+    final claveBajas = _dataKeyFor(pestana, 'Bajas');
+
+    List<dynamic>? filasDe(String clave) {
+      final datos = _datosHojas[clave];
+      if (datos is! Map) return null;
+      return List<dynamic>.from(datos['rows'] as List<dynamic>? ?? const []);
+    }
+
+    int indiceDe(List<dynamic> filas, String sn) {
+      if (sn.isEmpty) return -1;
+      for (var i = 0; i < filas.length; i++) {
+        final f = filas[i];
+        if (f is Map && _snDeFila(f, pestana) == sn) return i;
+      }
+      return -1;
+    }
+
+    void guardar(String clave, List<dynamic> filas) {
+      final datos = Map<String, dynamic>.from(_datosHojas[clave] as Map);
+      datos['rows'] = filas;
+      _datosHojas[clave] = datos;
+    }
+
+    final origen = filasDe(pestana);
+    if (origen == null) return false;
+
+    if (alta) {
+      if (fila == null) return false;
+      origen.add(fila);
+      guardar(pestana, origen);
+    } else if (baja) {
+      final i = indiceDe(origen, snAnterior);
+      if (i < 0) return false;
+      origen.removeAt(i);
+      guardar(pestana, origen);
+      final bajas = filasDe(claveBajas);
+      if (bajas != null && filaBaja != null) {
+        bajas.add(filaBaja);
+        guardar(claveBajas, bajas);
+      } else if (bajas != null) {
+        _datosHojas.remove(claveBajas);
+      }
+    } else if (revertir) {
+      if (fila == null) return false;
+      origen.add(fila);
+      guardar(pestana, origen);
+      final bajas = filasDe(claveBajas);
+      if (bajas != null) {
+        final i = indiceDe(bajas, snAnterior);
+        if (i >= 0) bajas.removeAt(i);
+        guardar(claveBajas, bajas);
+      }
+    } else {
+      if (fila == null) return false;
+      final i = indiceDe(origen, snAnterior);
+      if (i < 0) return false;
+      origen[i] = fila;
+      guardar(pestana, origen);
+    }
+
+    _datosCambiaron();
+    setState(() {});
+    return true;
+  }
+
+  void _resaltarFila(String sn) {
+    _timerResalte?.cancel();
+    _snResaltado.value = sn;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _irAFila(sn));
+    _timerResalte = Timer(const Duration(seconds: 5), () {
+      if (mounted) _snResaltado.value = '';
+    });
+  }
+
+  void _irAFila(String sn) {
+    if (!mounted || !_vCtrl.hasClients) return;
+    final (headers, filas) = _obtenerDatosVisibles();
+    final pestana = _tabs[_tabIndex.value];
+    final snHeader = _headerSn(headers, pestana);
+    if (snHeader == null) return;
+
+    for (var i = 0; i < filas.length; i++) {
+      final fila = filas[i];
+      if (fila is Map && _normSn(fila[snHeader]) == sn) {
+        final pos = _vCtrl.position;
+        final destino = (i * 52.0 - pos.viewportDimension / 3)
+            .clamp(0.0, pos.maxScrollExtent);
+        _vCtrl.animateTo(
+          destino,
+          duration: const Duration(milliseconds: 450),
+          curve: Curves.easeOutCubic,
+        );
+        return;
+      }
+    }
   }
 
   String _dataKeyFor(String nombrePestana, String filtro) {
@@ -263,15 +638,18 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     return {'headers': uniqueHeaders, 'rows': resultRows};
   }
 
-  Future<void> _asegurarBajasCargadas(String nombrePestana) async {
+  Future<void> _asegurarBajasCargadas(String nombrePestana,
+      {bool forzar = false}) async {
     final key = _dataKeyFor(nombrePestana, 'Bajas');
-    if (_datosHojas.containsKey(key) || _bajasEnCarga.contains(key)) return;
+    if (_bajasEnCarga.contains(key)) return;
+    if (!forzar && _datosHojas.containsKey(key)) return;
 
     _bajasEnCarga.add(key);
     if (mounted) setState(() {});
 
     final sheetIdOrName = _inventarioActivo?.spreadsheetId ?? '';
-    final dataRaw = await AuthService.obtenerHojaBajas(sheetIdOrName, nombrePestana);
+    final dataRaw = await AuthService.obtenerHojaBajas(sheetIdOrName, nombrePestana,
+        forzar: forzar);
     final procesado = _procesarHojaData(dataRaw);
 
     _bajasEnCarga.remove(key);
@@ -394,43 +772,86 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            behavior: SnackBarBehavior.floating,
+            width: _anchoAviso(context),
             content: Text('No se encontró ningún elemento con el código: $scannedSN'),
             backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-          ),
+                      ),
         );
       }
     }
   }
 
-  Future<void> _cargarDatosRemotos() async {
-    setState(() => _isLoading = true);
+  Future<void> _cargarDatosRemotos(
+      {bool silencioso = false, bool forzar = false}) async {
+    if (!silencioso) setState(() => _isLoading = true);
 
     final sheetIdOrName = _inventarioActivo?.spreadsheetId ?? '';
-    final resultado = await AuthService.obtenerDatosInventario(sheetIdOrName);
+    final resultado = await AuthService.obtenerDatosInventario(sheetIdOrName,
+        forzar: forzar);
 
     if (!mounted) return;
 
+    if (silencioso && resultado.isEmpty) {
+      if (AuthService.ultimoError.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            width: _anchoAviso(context),
+            content: Text(AuthService.ultimoError),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
     final datosProcesados = <String, dynamic>{};
     final columnasIniciales = <String, Set<String>>{};
+    final columnasPrevias = _columnasPorPestana.value;
 
     resultado.forEach((pestana, data) {
       final procesado = _procesarHojaData(data);
       datosProcesados[pestana] = procesado;
-      columnasIniciales[pestana] = Set<String>.from(procesado['headers'] as List<String>);
+      final todas = Set<String>.from(procesado['headers'] as List<String>);
+      final previas = columnasPrevias[pestana];
+      if (silencioso && previas != null) {
+        final conservadas = previas.where(todas.contains).toSet();
+        columnasIniciales[pestana] = conservadas.isEmpty ? todas : conservadas;
+      } else {
+        columnasIniciales[pestana] = todas;
+      }
     });
+
+    if (silencioso) {
+      _datosHojas.forEach((clave, valor) {
+        if (clave.contains('__Bajas')) {
+          datosProcesados[clave] = valor;
+          final previas = columnasPrevias[clave];
+          if (previas != null) columnasIniciales[clave] = previas;
+        }
+      });
+    }
 
     _datosCambiaron();
     setState(() {
       _datosHojas = datosProcesados;
-      _bajasEnCarga.clear();
+      if (!silencioso) _bajasEnCarga.clear();
       _isLoading = false;
     });
     _columnasPorPestana.value = columnasIniciales;
 
+    if (!silencioso &&
+        _filtroEstado.value == 'Bajas' &&
+        !datosProcesados.containsKey(_dataKeyFor(_tabs[_tabIndex.value], 'Bajas'))) {
+      _asegurarBajasCargadas(_tabs[_tabIndex.value]);
+    }
+
     if (resultado.isEmpty && AuthService.ultimoError.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          behavior: SnackBarBehavior.floating,
+          width: _anchoAviso(context),
           content: Text(AuthService.ultimoError),
           backgroundColor: Colors.redAccent,
         ),
@@ -466,7 +887,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
             final todasFiltradasSeleccionadas = headersFiltrados.isNotEmpty &&
                 headersFiltrados.every((h) => tempColumnasActivas.contains(h));
 
-            return AlertDialog(
+            return _Compacto(ancho: 480, child: AlertDialog(
               shape:
                   RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
               contentPadding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
@@ -619,19 +1040,19 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                   ],
                 ),
               ),
-            );
+            ));
           },
         );
       },
     );
   }
 
-  Widget _buildCellContent(String header, String valor) {
-    final h = header.toLowerCase();
-    final v = valor.toLowerCase().trim();
-    final esEstatus = h.contains('estatus') || h.contains('status');
+  static const TextStyle _estiloCelda =
+      TextStyle(fontSize: 14, color: Colors.black87);
 
-    if (esEstatus && v.isNotEmpty) {
+  Widget _buildCellContent(String header, String valor, bool esEstatus) {
+    if (esEstatus && valor.isNotEmpty) {
+      final v = valor.toLowerCase().trim();
       Color color;
       Color fondo;
       if (v == 'activo' || v == 'active' || v == 'asignado') {
@@ -674,12 +1095,15 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
 
     return Text(
       valor,
+      maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 14, color: Colors.black87),
+      style: _estiloCelda,
     );
   }
 
-  void _abrirDetalle(Map<String, dynamic> fila, String nombrePestana) {
+  void _abrirDetalle(Map<String, dynamic> fila, String nombrePestana,
+      {bool esBaja = false}) {
+    final snFila = _snDeFila(fila, nombrePestana);
     final mainData = _datosHojas[nombrePestana] ?? {'headers': [], 'rows': []};
     final mainHeaders = List<String>.from(mainData['headers'] ?? []);
     final mainRows = List<dynamic>.from(mainData['rows'] ?? [])
@@ -698,8 +1122,12 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
         existingRows: mainRows,
         inventario: _inventarioActivo,
         puedeEditar: _puedeEditar,
-        onBajaExitosa: _trasCambio,
-        onEditExitosa: _trasCambio,
+        esBaja: esBaja,
+        onBajaExitosa: () =>
+            _trasCambio(pestana: nombrePestana, sn: snFila, baja: true),
+        onEditExitosa: () => _trasCambio(pestana: nombrePestana, sn: snFila),
+        onRevertirExitosa: () =>
+            _trasCambio(pestana: nombrePestana, sn: snFila, revertir: true),
       ),
     );
   }
@@ -708,7 +1136,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
       String nombrePestana, List<String> headers, List<dynamic> rows) async {
     if (headers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          width: _anchoAviso(context),
             content: Text('No se encontraron columnas para esta pestaña.')),
       );
       return;
@@ -729,7 +1159,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     );
 
     if (creado == true && mounted) {
-      _trasCambio();
+      _trasCambio(pestana: nombrePestana, alta: true);
     }
   }
 
@@ -975,16 +1405,32 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              ValueListenableBuilder<int>(
-                valueListenable: _tabIndex,
-                builder: (context, index, _) => Text(
-                  _tabs[index],
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: primaryPurple,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Volver',
+                    onPressed: () => Navigator.maybePop(context),
+                    icon: const Icon(Icons.arrow_back_rounded,
+                        color: primaryPurple, size: 26),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
                   ),
-                ),
+                  const SizedBox(width: 6),
+                  ValueListenableBuilder<int>(
+                    valueListenable: _tabIndex,
+                    builder: (context, index, _) => Text(
+                      _tabs[index],
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: primaryPurple,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               PopupMenuButton<String>(
                 offset: const Offset(0, 40),
@@ -1139,7 +1585,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
 
                         if (activeHeaders.isEmpty || filteredRows.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
+                            SnackBar(
+                              behavior: SnackBarBehavior.floating,
+                              width: _anchoAviso(context),
                                 content:
                                     Text('No hay datos visibles para exportar.')),
                           );
@@ -1149,12 +1597,12 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                         showDialog(
                           context: context,
                           barrierDismissible: false,
-                          builder: (context) => _ExportarDialog(
+                          builder: (context) => _Compacto(ancho: 460, child: _ExportarDialog(
                             nombrePestana: nombrePestana,
                             headers: activeHeaders,
                             rows: filteredRows,
                             correo: _user?.correo ?? AuthService.actorEmailSync,
-                          ),
+                          )),
                         );
                       },
                       style: OutlinedButton.styleFrom(
@@ -1287,116 +1735,184 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
     }
 
     final tableWidth = headers.length * _colWidth;
+    final snHeader = _headerSn(headers, nombrePestana);
+    final resaltado = _snResaltado.value;
+    final claveVista = dataKey;
+    final esEstatus = headers
+        .map((h) {
+          final l = h.toLowerCase();
+          return l.contains('estatus') || l.contains('status');
+        })
+        .toList(growable: false);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: tableWidth < constraints.maxWidth
+    Widget cabecera() => Container(
+          height: 44,
+          decoration: const BoxDecoration(
+            border:
+                Border(bottom: BorderSide(color: Color(0xFFF0F0F3), width: 1)),
+          ),
+          child: Row(
+            children: headers
+                .map((h) => SizedBox(
+                      width: _colWidth,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            h,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+        );
+
+    return ScrollConfiguration(
+      behavior: const _ComportamientoTabla(),
+      child: ScrollbarTheme(
+        data: _temaBarras,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final anchoTabla = tableWidth < constraints.maxWidth
                 ? constraints.maxWidth
-                : tableWidth,
-            height: constraints.maxHeight,
-            child: Column(
-              children: [
-                Container(
-                  height: 44,
-                  decoration: const BoxDecoration(
-                    border: Border(
-                        bottom: BorderSide(color: Color(0xFFF0F0F3), width: 1)),
-                  ),
-                  child: Row(
-                    children: headers
-                        .map((h) => SizedBox(
-                              width: _colWidth,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    h,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                      color: Color(0xFF6B7280),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ))
-                        .toList(),
-                  ),
-                ),
-                Expanded(
-                  child: filteredRows.isEmpty
-                      ? const Center(
+                : tableWidth;
+
+            if (filteredRows.isEmpty) {
+              return SingleChildScrollView(
+                key: ValueKey('h0_$claveVista'),
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: anchoTabla,
+                  height: constraints.maxHeight,
+                  child: Column(
+                    children: [
+                      cabecera(),
+                      const Expanded(
+                        child: Center(
                           child: Text(
                             'Sin resultados',
                             style:
                                 TextStyle(color: Colors.black45, fontSize: 13),
                           ),
-                        )
-                      : ListView.builder(
-                          itemCount: filteredRows.length,
-                          itemExtent: 52,
-                          itemBuilder: (context, i) {
-                            final map = filteredRows[i] as Map;
-                            return Material(
-                              color: i.isEven
-                                  ? Colors.white
-                                  : const Color(0xFFFAFAFC),
-                              child: InkWell(
-                                onTap: () => _abrirDetalle(
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            return Scrollbar(
+              controller: _vCtrl,
+              interactive: true,
+              notificationPredicate: (n) => n.depth == 1,
+              child: Scrollbar(
+                controller: _hCtrl,
+                interactive: true,
+                notificationPredicate: (n) => n.depth == 0,
+                child: SingleChildScrollView(
+                  key: ValueKey('h_$claveVista'),
+                  controller: _hCtrl,
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: anchoTabla,
+                    height: constraints.maxHeight,
+                    child: Column(
+                      children: [
+                        cabecera(),
+                        Expanded(
+                          child: ListView.builder(
+                            key: ValueKey('v_$claveVista'),
+                            controller: _vCtrl,
+                            itemCount: filteredRows.length,
+                            itemExtent: 52,
+                            addAutomaticKeepAlives: false,
+                            cacheExtent: 260,
+                            itemBuilder: (context, i) {
+                              final map = filteredRows[i] as Map;
+                              final esResaltada = resaltado.isNotEmpty &&
+                                  snHeader != null &&
+                                  _normSn(map[snHeader]) == resaltado;
+                              return Material(
+                                animationDuration: Duration.zero,
+                                color: esResaltada
+                                    ? const Color(0xFFE9DDF7)
+                                    : (i.isEven
+                                        ? Colors.white
+                                        : const Color(0xFFFAFAFC)),
+                                child: InkWell(
+                                  onTap: () => _abrirDetalle(
                                     Map<String, dynamic>.from(map),
-                                    nombrePestana),
-                                child: Container(
-                                  decoration: const BoxDecoration(
-                                    border: Border(
-                                      bottom: BorderSide(
-                                          color: Color(0xFFF3F4F6), width: 1),
+                                    nombrePestana,
+                                    esBaja: filtro == 'Bajas',
+                                  ),
+                                  child: Container(
+                                    decoration: esResaltada
+                                        ? const BoxDecoration(
+                                            border: Border(
+                                              left: BorderSide(
+                                                  color: primaryPurple,
+                                                  width: 4),
+                                              bottom: BorderSide(
+                                                  color: Color(0xFFF3F4F6),
+                                                  width: 1),
+                                            ),
+                                          )
+                                        : _bordeFila,
+                                    child: Row(
+                                      children: List.generate(headers.length, (c) {
+                                        final h = headers[c];
+                                        final valor = map[h]?.toString() ?? '';
+                                        return SizedBox(
+                                          width: _colWidth,
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12),
+                                            child: Align(
+                                              alignment: Alignment.centerLeft,
+                                              child:
+                                                  _buildCellContent(h, valor,
+                                                      esEstatus[c]),
+                                            ),
+                                          ),
+                                        );
+                                      }, growable: false),
                                     ),
                                   ),
-                                  child: Row(
-                                    children: headers.map((h) {
-                                      final valor = map[h]?.toString() ?? '';
-                                      return SizedBox(
-                                        width: _colWidth,
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 12),
-                                          child: Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: _buildCellContent(h, valor),
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
                 ),
-              ],
-            ),
-          ),
-        );
-      },
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
   Widget _buildBottomNav() {
-    final icons = [
+    const icons = [
       (CupertinoIcons.desktopcomputer, 'Captura'),
       (CupertinoIcons.printer, 'Impresoras'),
       (Icons.storage_rounded, 'Otros'),
       (Icons.invert_colors, 'Consumibles'),
     ];
 
-    final amplio = MediaQuery.of(context).size.width >= 700;
+    final amplio = MediaQuery.sizeOf(context).width >= 700;
     final altoBarra = amplio ? 56.0 : 48.0;
     final tamIcono = amplio ? 21.0 : 18.0;
     final tamTexto = amplio ? 11.5 : 10.0;
@@ -1409,21 +1925,18 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
           child: Padding(
             padding:
                 const EdgeInsets.only(left: 16, right: 16, bottom: 8, top: 0),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(29),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Container(
+            child: RepaintBoundary(
+              child: Container(
                   height: altoBarra,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.75),
+                    color: const Color(0xFFFCFBFE),
                     borderRadius: BorderRadius.circular(29),
-                    border: Border.all(color: Colors.white.withOpacity(0.6)),
-                    boxShadow: [
+                    border: Border.all(color: const Color(0xFFEDE7F6)),
+                    boxShadow: const [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.10),
-                        blurRadius: 24,
-                        offset: const Offset(0, 6),
+                        color: Color(0x1A000000),
+                        blurRadius: 12,
+                        offset: Offset(0, 3),
                       ),
                     ],
                   ),
@@ -1498,7 +2011,6 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
                     },
                   ),
                 ),
-              ),
             ),
           ),
         ),
@@ -1668,8 +2180,10 @@ class _DeviceDetailSheet extends StatefulWidget {
   final List<Map<String, dynamic>> existingRows;
   final InventoryModel? inventario;
   final bool puedeEditar;
+  final bool esBaja;
   final VoidCallback onBajaExitosa;
   final VoidCallback onEditExitosa;
+  final VoidCallback onRevertirExitosa;
 
   const _DeviceDetailSheet({
     required this.fila,
@@ -1679,8 +2193,10 @@ class _DeviceDetailSheet extends StatefulWidget {
     required this.existingRows,
     required this.inventario,
     required this.puedeEditar,
+    required this.esBaja,
     required this.onBajaExitosa,
     required this.onEditExitosa,
+    required this.onRevertirExitosa,
   });
 
   @override
@@ -1691,6 +2207,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
   static const primaryPurple = Color(0xFF532E7C);
 
   final Set<int> _expandidas = {0};
+  bool _revirtiendo = false;
 
   _DetailConfig get _config {
     switch (widget.nombrePestana) {
@@ -1761,7 +2278,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     final motivoElegido = await showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => _ConfirmarBajaDialog(
+      builder: (dialogContext) => _Compacto(ancho: 460, child: _ConfirmarBajaDialog(
         titulo: _titulo(),
         nombreSeccionBajas: _mapaNombreBajas[widget.nombrePestana] ?? 'Bajas',
         esConsumible: esConsumible,
@@ -1774,7 +2291,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
             motivo: motivo,
           );
         },
-      ),
+      )),
     );
 
     if (motivoElegido == null) return;
@@ -1786,17 +2303,86 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (dialogContext) => _BajaExitosaDialog(
+        builder: (dialogContext) => _Compacto(ancho: 420, child: _BajaExitosaDialog(
           titulo: _titulo(),
           nombreSeccionBajas: _mapaNombreBajas[widget.nombrePestana] ?? 'Bajas',
           motivo: motivoElegido,
-        ),
+        )),
       );
     }
 
     if (!mounted) return;
     Navigator.pop(context);
     widget.onBajaExitosa();
+  }
+
+  Future<void> _revertirBaja() async {
+    final sn = _valor(_config.snKey);
+    if (sn.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          width: _anchoAviso(context),
+          content: Text('El elemento no tiene identificador, no se puede revertir'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => _Compacto(ancho: 420, child: AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Revertir baja',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        content: Text(
+          '¿Regresar "${_titulo()}" a la pestaña "${widget.nombrePestana}"? Dejará de aparecer en las bajas.',
+          style: const TextStyle(fontSize: 14, color: Colors.black87),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar',
+                style: TextStyle(color: Color(0xFF4B5563))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Revertir',
+                style: TextStyle(
+                    color: Color(0xFF16A34A), fontWeight: FontWeight.bold)),
+          ),
+        ],
+      )),
+    );
+    if (confirmar != true || !mounted) return;
+
+    setState(() => _revirtiendo = true);
+    final ok = await AuthService.revertirBaja(
+      spreadsheetId: widget.spreadsheetId,
+      pestana: widget.nombrePestana,
+      sn: sn,
+    );
+    if (!mounted) return;
+    setState(() => _revirtiendo = false);
+
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          width: _anchoAviso(context),
+          content: Text(AuthService.ultimoError.isEmpty
+              ? 'No se pudo revertir la baja'
+              : AuthService.ultimoError),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    Navigator.pop(context);
+    widget.onRevertirExitosa();
   }
 
   Future<void> _abrirEdicion() async {
@@ -1829,6 +2415,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
 
   bool get _puedeTransferir =>
       widget.puedeEditar &&
+      !widget.esBaja &&
       _valor(_config.snKey).isNotEmpty &&
       _destinosTransferencia.isNotEmpty;
 
@@ -1836,7 +2423,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     final destino = await showDialog<InventoryModel>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _TransferirDialog(
+      builder: (_) => _Compacto(ancho: 480, child: _TransferirDialog(
         titulo: _titulo(),
         inventarioActual: widget.inventario?.nombre ?? 'Inventario actual',
         pestana: widget.nombrePestana,
@@ -1848,7 +2435,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
           destinoInventoryId: dest.id,
           motivo: motivo,
         ),
-      ),
+      )),
     );
 
     if (destino == null || !mounted) return;
@@ -1856,10 +2443,11 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     if (!AuthService.ultimaRespuestaPendiente) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          behavior: SnackBarBehavior.floating,
+          width: _anchoAviso(context),
           content: Text('Elemento transferido a ${destino.nombre}'),
           backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+                  ),
       );
     }
 
@@ -1878,7 +2466,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (_, setStateDialog) {
-            return AlertDialog(
+            return _Compacto(ancho: 440, child: AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: const Text('Asignar Consumible',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
@@ -1935,6 +2523,8 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
+                                behavior: SnackBarBehavior.floating,
+                                width: _anchoAviso(context),
                                 content: Text(AuthService.ultimoError.isEmpty
                                     ? 'Error al asignar el consumible'
                                     : AuthService.ultimoError),
@@ -1948,7 +2538,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                       : const Text('Asignar', style: TextStyle(color: Colors.white)),
                 ),
               ],
-            );
+            ));
           },
         );
       },
@@ -2090,6 +2680,36 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                       ],
                     ),
                   ),
+                  if (widget.esBaja)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFECACA)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.remove_circle_outline,
+                                size: 18, color: Color(0xFFB91C1C)),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Este elemento está dado de baja. Puedes revertir la baja para regresarlo al inventario.',
+                                style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: Color(0xFF7F1D1D),
+                                    height: 1.35),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Row(
@@ -2333,8 +2953,67 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     );
   }
 
+  Widget _botonQr() {
+    return OutlinedButton.icon(
+      onPressed: () {
+        final serialNumber = _valor(_config.snKey);
+        final serialFinal =
+            serialNumber.isNotEmpty ? serialNumber : 'NA-00000000';
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => QrViewScreen(
+              serialNumber: serialFinal,
+              nombreActivo: _titulo(),
+            ),
+          ),
+        );
+      },
+      style: OutlinedButton.styleFrom(
+        foregroundColor: primaryPurple,
+        side: const BorderSide(color: primaryPurple),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+      ),
+      icon: const Icon(Icons.qr_code_rounded, size: 18),
+      label: const Text('Ver QR',
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+    );
+  }
+
   List<Widget> _buildAcciones(bool esConsumible) {
     final acciones = <Widget>[];
+
+    if (widget.esBaja) {
+      if (!esConsumible) acciones.add(_botonQr());
+      if (widget.puedeEditar) {
+        acciones.add(
+          ElevatedButton.icon(
+            onPressed: _revirtiendo ? null : _revertirBaja,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF16A34A),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            icon: _revirtiendo
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2),
+                  )
+                : const Icon(Icons.restore_rounded, size: 18),
+            label: const Text('Revertir baja',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          ),
+        );
+      }
+      return acciones;
+    }
 
     if (widget.puedeEditar &&
         esConsumible &&
@@ -2358,35 +3037,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     }
 
     if (!esConsumible) {
-      acciones.add(
-        OutlinedButton.icon(
-          onPressed: () {
-            final serialNumber = _valor(_config.snKey);
-            final serialFinal =
-                serialNumber.isNotEmpty ? serialNumber : 'NA-00000000';
-
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => QrViewScreen(
-                  serialNumber: serialFinal,
-                  nombreActivo: _titulo(),
-                ),
-              ),
-            );
-          },
-          style: OutlinedButton.styleFrom(
-            foregroundColor: primaryPurple,
-            side: const BorderSide(color: primaryPurple),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24)),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
-          icon: const Icon(Icons.qr_code_rounded, size: 18),
-          label: const Text('Ver QR',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-        ),
-      );
+      acciones.add(_botonQr());
     }
 
     if (widget.puedeEditar) {
@@ -3200,7 +3851,7 @@ class _ExportarDialogState extends State<_ExportarDialog> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => _ExitoExportarDialog(correo: widget.correo),
+          builder: (context) => _Compacto(ancho: 420, child: _ExitoExportarDialog(correo: widget.correo)),
         );
       }
     }
@@ -3457,6 +4108,39 @@ class _ExitoExportarDialog extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ComportamientoTabla extends MaterialScrollBehavior {
+  const _ComportamientoTabla();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.trackpad,
+      };
+
+  @override
+  Widget buildScrollbar(
+          BuildContext context, Widget child, ScrollableDetails details) =>
+      child;
+}
+
+class _Compacto extends StatelessWidget {
+  final double ancho;
+  final Widget child;
+  const _Compacto({required this.ancho, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: ancho + 48),
+        child: child,
       ),
     );
   }

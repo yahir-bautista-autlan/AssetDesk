@@ -4,7 +4,7 @@ import '../models/solicitud_model.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../widgets/inventario_imagen.dart';
-import 'inventory_dashboard_screen.dart';
+import 'inventory_menu_screen.dart';
 
 class InventorySelectionScreen extends StatefulWidget {
   final List<InventoryModel> inventariosVinculados;
@@ -437,9 +437,9 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => InventoryDashboardScreen(inventario: inv),
+            builder: (context) => InventoryMenuScreen(inventario: inv),
           ),
-        );
+        ).then((_) => AuthService.olvidarSitio());
       },
       builder: (activa) => inv.portadaId.isNotEmpty
           ? _contenidoConPortada(inv, activa)
@@ -609,7 +609,8 @@ class _TarjetaAnimadaState extends State<_TarjetaAnimada> {
     final escala = _presionada ? 0.97 : (_hover ? 1.02 : 1.0);
     final activa = _hover || _presionada;
 
-    return MouseRegion(
+    return RepaintBoundary(
+      child: MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -655,12 +656,13 @@ class _TarjetaAnimadaState extends State<_TarjetaAnimada> {
                 onTapDown: (_) => setState(() => _presionada = true),
                 onTapUp: (_) => setState(() => _presionada = false),
                 onTapCancel: () => setState(() => _presionada = false),
-                child: widget.builder(activa),
+                child: RepaintBoundary(child: widget.builder(activa)),
               ),
             ),
           ),
         ),
       ),
+    ),
     );
   }
 }

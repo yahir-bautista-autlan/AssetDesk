@@ -8,7 +8,7 @@ import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/admin_management_screen.dart';
 import 'screens/inventory_selection_screen.dart';
-import 'screens/inventory_dashboard_screen.dart';
+import 'screens/inventory_menu_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -154,7 +154,9 @@ class _AssetDeskAppState extends State<AssetDeskApp>
           final args = settings.arguments;
           final inventario = args is InventoryModel ? args : null;
           return MaterialPageRoute(
-            builder: (_) => InventoryDashboardScreen(inventario: inventario),
+            builder: (_) => inventario == null
+                ? const _SelectionRoute()
+                : InventoryMenuScreen(inventario: inventario),
             settings: settings,
           );
         }
@@ -172,7 +174,7 @@ class SessionGate extends StatefulWidget {
 }
 
 class _SessionGateState extends State<SessionGate> {
-  late final Future<UserModel?> _sesion;
+  late final Future<({UserModel? usuario, InventoryModel? inventario, bool enDashboard})> _sesion;
 
   @override
   void initState() {
@@ -180,7 +182,7 @@ class _SessionGateState extends State<SessionGate> {
     _sesion = _validar();
   }
 
-  Future<UserModel?> _validar() async {
+  Future<({UserModel? usuario, InventoryModel? inventario, bool enDashboard})> _validar() async {
     if (await InactividadService.expiroEnDisco()) {
       await AuthService.logout();
       Future.delayed(const Duration(milliseconds: 600), () {
@@ -195,16 +197,32 @@ class _SessionGateState extends State<SessionGate> {
             ),
           );
       });
-      return null;
+      return (usuario: null, inventario: null, enDashboard: false);
     }
+
     final usuario = await AuthService.obtenerUsuarioActual();
-    if (usuario != null) InactividadService.registrar(forzar: true);
-    return usuario;
+    if (usuario == null) return (usuario: null, inventario: null, enDashboard: false);
+
+    InactividadService.registrar(forzar: true);
+
+    InventoryModel? inventario;
+    var enDashboard = false;
+    final sitio = await AuthService.leerSitio();
+    if (sitio != null) {
+      for (final inv in usuario.inventarios) {
+        if (inv.id == sitio.$1) {
+          inventario = inv;
+          enDashboard = sitio.$2 >= 0;
+          break;
+        }
+      }
+    }
+    return (usuario: usuario, inventario: inventario, enDashboard: enDashboard);
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<UserModel?>(
+    return FutureBuilder<({UserModel? usuario, InventoryModel? inventario, bool enDashboard})>(
       future: _sesion,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
@@ -214,12 +232,58 @@ class _SessionGateState extends State<SessionGate> {
             ),
           );
         }
-        final user = snapshot.data;
+        final sesion = snapshot.data;
+        final user = sesion?.usuario;
         if (user == null) return const LoginScreen();
-        return InventorySelectionScreen(
-          inventariosVinculados: user.inventarios,
+        return _RestauradorSitio(
+          usuario: user,
+          inventario: sesion?.inventario,
+          enDashboard: sesion?.enDashboard ?? false,
         );
       },
+    );
+  }
+}
+
+class _RestauradorSitio extends StatefulWidget {
+  final UserModel usuario;
+  final InventoryModel? inventario;
+  final bool enDashboard;
+
+  const _RestauradorSitio({
+    required this.usuario,
+    this.inventario,
+    this.enDashboard = false,
+  });
+
+  @override
+  State<_RestauradorSitio> createState() => _RestauradorSitioState();
+}
+
+class _RestauradorSitioState extends State<_RestauradorSitio> {
+  @override
+  void initState() {
+    super.initState();
+    final inv = widget.inventario;
+    if (inv != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context)
+            .push(MaterialPageRoute(
+              builder: (_) => InventoryMenuScreen(
+                inventario: inv,
+                restaurarDashboard: widget.enDashboard,
+              ),
+            ))
+            .then((_) => AuthService.olvidarSitio());
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InventorySelectionScreen(
+      inventariosVinculados: widget.usuario.inventarios,
     );
   }
 }
