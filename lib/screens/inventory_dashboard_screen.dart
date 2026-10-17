@@ -390,20 +390,6 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     return h == null ? '' : _normSn(fila[h]);
   }
 
-  Set<String> _snsDe(String pestana) {
-    final data = _datosHojas[pestana];
-    if (data is! Map) return <String>{};
-    final rows = data['rows'] as List<dynamic>? ?? [];
-    final resultado = <String>{};
-    for (final r in rows) {
-      if (r is Map) {
-        final sn = _snDeFila(r, pestana);
-        if (sn.isNotEmpty) resultado.add(sn);
-      }
-    }
-    return resultado;
-  }
-
   bool _teclaNavegacion(KeyEvent evento) {
     if (evento is! KeyDownEvent && evento is! KeyRepeatEvent) return false;
     if (!mounted) return false;
