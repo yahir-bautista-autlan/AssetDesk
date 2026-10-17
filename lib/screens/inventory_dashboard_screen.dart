@@ -119,7 +119,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
   bool _enPrimerPlano = true;
   int _fallosSync = 0;
   int _saltarSondeos = 0;
-  Map<String, dynamic>? _registroSync;
+  String _secSync = '';
+  bool _eventoPropioRecibido = false;
   Future<void>? _cargaTotal;
   final Set<String> _pestanasEnCarga = {};
   String _memoKey = '';
@@ -145,6 +146,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     _inventarioActivo = widget.inventario;
     HardwareKeyboard.instance.addHandler(_teclaNavegacion);
     WidgetsBinding.instance.addObserver(this);
+    AuthService.alEventoPropio = (ev) => _recibirEvento(ev, propio: true);
     _cargarUsuario();
     _iniciar();
   }
@@ -160,14 +162,16 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     if (!mounted) return;
     final ss = _inventarioActivo?.spreadsheetId ?? '';
     if (ss.isNotEmpty) {
-      AuthService.obtenerCambios(ss).then((r) {
-        if (mounted && _registroSync == null && r != null) _registroSync = r;
+      AuthService.obtenerCambios(ss, '').then((r) {
+        if (mounted && _secSync.isEmpty && r != null) {
+          _secSync = (r['seq'] ?? '').toString();
+        }
       });
     }
     _cargarDatosRemotos();
     _timerSync?.cancel();
     _timerSync =
-        Timer.periodic(const Duration(seconds: 4), (_) => _sondearCambios());
+        Timer.periodic(const Duration(seconds: 3), (_) => _sondearCambios());
   }
 
   @override
@@ -187,91 +191,160 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
     _sondeando = true;
     try {
-      final registro = await AuthService.obtenerCambios(ss);
+      final r = await AuthService.obtenerCambios(ss, _secSync);
       if (!mounted) return;
-      if (registro == null) {
+      if (r == null) {
         _fallosSync++;
         _saltarSondeos = _fallosSync.clamp(1, 6);
         return;
       }
       _fallosSync = 0;
-      final previo = _registroSync;
-      _registroSync = registro;
-      if (previo == null) return;
-      await _aplicarCambiosRemotos(previo, registro);
+      final previo = _secSync;
+      _secSync = (r['seq'] ?? previo).toString();
+      if (previo.isEmpty) return;
+
+      if (r['reset'] == true) {
+        _cargarDatosRemotos(silencioso: true);
+        _recontarPendientes();
+        return;
+      }
+
+      final eventos = r['eventos'];
+      if (eventos is List) {
+        final yo = AuthService.sesionId;
+        for (final e in eventos) {
+          if (e is! Map) continue;
+          if (e['s'] == yo) continue;
+          _recibirEvento(Map<String, dynamic>.from(e), propio: false);
+        }
+      }
     } finally {
       _sondeando = false;
     }
   }
 
-  Future<void> _aplicarCambiosRemotos(
-      Map<String, dynamic> previo, Map<String, dynamic> nuevo) async {
+  void _recontarPendientes() {
     final ss = _inventarioActivo?.spreadsheetId ?? '';
-    final yo = AuthService.sesionId;
-    final pestanas = <String>{};
-    final bajas = <String>{};
-    var solicitudes = false;
+    AuthService.olvidarDatos(ss, solicitudes: true);
+    if (_puedeAprobar) _cargarPendientes();
+  }
 
-    if (previo['_e'] != nuevo['_e']) {
-      pestanas.addAll(_tabs);
-      solicitudes = true;
+  List<dynamic>? _filasDe(String clave) {
+    final datos = _datosHojas[clave];
+    if (datos is! Map) return null;
+    return List<dynamic>.from(datos['rows'] as List<dynamic>? ?? const []);
+  }
+
+  int _indiceDeSn(List<dynamic> filas, String pestana, String sn) {
+    if (sn.isEmpty) return -1;
+    for (var i = 0; i < filas.length; i++) {
+      final f = filas[i];
+      if (f is Map && _snDeFila(f, pestana) == sn) return i;
     }
+    return -1;
+  }
 
-    nuevo.forEach((clave, valor) {
-      if (clave == '_e' || valor is! Map) return;
-      final antes = previo[clave];
-      final tPrevio = antes is Map ? antes['t'] : null;
-      if (tPrevio == valor['t']) return;
-      if (valor['s'] == yo) return;
-      if (clave == '_solicitudes') {
-        solicitudes = true;
-      } else if (clave.startsWith('Bajas:')) {
-        bajas.add(clave.substring(6));
-      } else if (_tabs.contains(clave)) {
-        pestanas.add(clave);
-      }
-    });
+  void _guardarFilas(String clave, List<dynamic> filas) {
+    final datos = Map<String, dynamic>.from(_datosHojas[clave] as Map);
+    datos['rows'] = filas;
+    _datosHojas[clave] = datos;
+  }
 
-    if (pestanas.isEmpty && bajas.isEmpty && !solicitudes) return;
-
-    final generacion = _generacionCarga;
-    final actual = _tabs[_tabIndex.value];
-    var tocoVista = false;
-
-    if (pestanas.isNotEmpty) {
-      for (final t in pestanas) {
-        AuthService.olvidarDatos(ss, pestana: t);
-      }
-      final lista = pestanas.toList();
-      final resultados =
-          await Future.wait(lista.map((t) => AuthService.obtenerPestana(ss, t)));
-      if (!mounted || generacion != _generacionCarga) return;
-      for (var i = 0; i < lista.length; i++) {
-        final raw = resultados[i];
-        if (raw == null) continue;
-        _aplicarPestana(lista[i], raw, conservar: true);
-        if (lista[i] == actual && _filtroEstado.value != 'Bajas') {
-          tocoVista = true;
-        }
-      }
+  String _upsertFila(
+      String clave, String pestana, Map<String, dynamic> fila, String snViejo) {
+    final filas = _filasDe(clave);
+    if (filas == null) return '';
+    final snNuevo = _snDeFila(fila, pestana);
+    var i = _indiceDeSn(filas, pestana, snViejo);
+    if (i < 0) i = _indiceDeSn(filas, pestana, snNuevo);
+    if (i >= 0) {
+      filas[i] = fila;
+    } else {
+      filas.add(fila);
     }
+    _guardarFilas(clave, filas);
+    return snNuevo;
+  }
 
-    for (final b in bajas) {
-      if (!_datosHojas.containsKey(_dataKeyFor(b, 'Bajas'))) continue;
-      AuthService.olvidarDatos(ss, pestana: b, bajas: true);
-      await _asegurarBajasCargadas(b, refrescar: true);
-      if (!mounted) return;
-      if (b == actual && _filtroEstado.value == 'Bajas') tocoVista = true;
-    }
+  void _quitarFila(String clave, String pestana, String sn) {
+    final filas = _filasDe(clave);
+    if (filas == null) return;
+    final i = _indiceDeSn(filas, pestana, sn);
+    if (i < 0) return;
+    filas.removeAt(i);
+    _guardarFilas(clave, filas);
+  }
 
-    if (solicitudes) {
-      AuthService.olvidarDatos(ss, solicitudes: true);
-      if (_puedeAprobar) _cargarPendientes();
-    }
-
-    if (!mounted) return;
+  Future<void> _refrescarPestana(String pestana) async {
+    final ss = _inventarioActivo?.spreadsheetId ?? '';
+    AuthService.olvidarDatos(ss, pestana: pestana);
+    final raw = await AuthService.obtenerPestana(ss, pestana);
+    if (!mounted || raw == null) return;
+    _aplicarPestana(pestana, raw, conservar: true);
     setState(() {});
-    if (tocoVista) _mostrarAviso('Tabla actualizada', primaryPurple, duracion: 2);
+  }
+
+  void _recibirEvento(Map<String, dynamic> ev, {required bool propio}) {
+    if (!mounted) return;
+    final k = (ev['k'] ?? '').toString();
+    final p = (ev['p'] ?? '').toString();
+    final sn = (ev['sn'] ?? '').toString();
+    final fila =
+        ev['fila'] is Map ? Map<String, dynamic>.from(ev['fila'] as Map) : null;
+    final filaBaja = ev['filaBaja'] is Map
+        ? Map<String, dynamic>.from(ev['filaBaja'] as Map)
+        : null;
+    final claveBajas = _dataKeyFor(p, 'Bajas');
+    var snResaltar = '';
+
+    if (propio) _eventoPropioRecibido = true;
+
+    switch (k) {
+      case 'alta':
+        if (fila != null) snResaltar = _upsertFila(p, p, fila, '');
+        break;
+      case 'edit':
+        if (fila != null) snResaltar = _upsertFila(p, p, fila, sn);
+        break;
+      case 'baja':
+        _quitarFila(p, p, sn);
+        if (filaBaja != null && _datosHojas.containsKey(claveBajas)) {
+          _upsertFila(claveBajas, p, filaBaja, sn);
+        }
+        break;
+      case 'revertir':
+        if (fila != null) snResaltar = _upsertFila(p, p, fila, sn);
+        _quitarFila(claveBajas, p, sn);
+        break;
+      case 'quitar':
+        _quitarFila(p, p, sn);
+        break;
+      case 'recargar':
+        if (_datosHojas.containsKey(p)) _refrescarPestana(p);
+        break;
+      case 'solicitudes':
+        _recontarPendientes();
+        return;
+      default:
+        return;
+    }
+
+    _datosCambiaron();
+
+    final actual = _tabs[_tabIndex.value];
+    if (propio && (k == 'alta' || k == 'revertir')) {
+      final i = _tabs.indexOf(p);
+      if (i >= 0 && _tabIndex.value != i) _tabIndex.value = i;
+      _limpiarVistaParaVer();
+    }
+    setState(() {});
+
+    if (snResaltar.isNotEmpty && (propio || p == actual)) {
+      _resaltarFila(snResaltar, desplazar: propio);
+    }
+    if (!propio && p == actual && _filtroEstado.value != 'Bajas') {
+      _mostrarAviso('Tabla actualizada', primaryPurple, duracion: 2);
+    }
   }
 
   Future<void> _restaurarPestana() async {
@@ -414,6 +487,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     HardwareKeyboard.instance.removeHandler(_teclaNavegacion);
     WidgetsBinding.instance.removeObserver(this);
     _timerSync?.cancel();
+    AuthService.alEventoPropio = null;
     _timerResalte?.cancel();
     _hCtrl.dispose();
     _vCtrl.dispose();
@@ -502,23 +576,13 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     if (mounted) _avisarSiPendiente(context);
 
     if (pendiente) {
+      _eventoPropioRecibido = false;
       if (_puedeAprobar) _cargarPendientes();
       return;
     }
 
-    final fila = AuthService.ultimaFila;
-    final filaBaja = AuthService.ultimaFilaBaja;
-    final antes = alta ? _snsDe(pestana) : <String>{};
-
-    final parchado = _aplicarCambioLocal(
-      pestana: pestana,
-      snAnterior: sn,
-      fila: fila,
-      filaBaja: filaBaja,
-      alta: alta,
-      baja: baja,
-      revertir: revertir,
-    );
+    final aplicado = _eventoPropioRecibido;
+    _eventoPropioRecibido = false;
 
     if (!mounted) return;
 
@@ -545,7 +609,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
     if (_puedeAprobar) _cargarPendientes();
 
-    if (!parchado) {
+    if (!aplicado) {
       await _cargarDatosRemotos(silencioso: true, forzar: true);
       if (!mounted) return;
 
@@ -554,23 +618,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
           (_filtroEstado.value == 'Bajas' &&
               _tabs[_tabIndex.value] == pestana)) {
         await _asegurarBajasCargadas(pestana, forzar: true);
-        if (!mounted) return;
       }
     }
-
-    if (baja) return;
-
-    String snObjetivo = sn.toLowerCase().trim();
-
-    if (alta) {
-      final nuevos = _snsDe(pestana).difference(antes);
-      snObjetivo = nuevos.isNotEmpty ? nuevos.last : '';
-    } else if (!revertir && fila != null) {
-      final nuevoSn = _snDeFila(fila, pestana);
-      if (nuevoSn.isNotEmpty) snObjetivo = nuevoSn;
-    }
-
-    if (snObjetivo.isNotEmpty) _resaltarFila(snObjetivo);
   }
 
   void _mostrarAviso(
@@ -600,84 +649,12 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     );
   }
 
-  bool _aplicarCambioLocal({
-    required String pestana,
-    required String snAnterior,
-    required Map<String, dynamic>? fila,
-    required Map<String, dynamic>? filaBaja,
-    required bool alta,
-    required bool baja,
-    required bool revertir,
-  }) {
-    final claveBajas = _dataKeyFor(pestana, 'Bajas');
-
-    List<dynamic>? filasDe(String clave) {
-      final datos = _datosHojas[clave];
-      if (datos is! Map) return null;
-      return List<dynamic>.from(datos['rows'] as List<dynamic>? ?? const []);
-    }
-
-    int indiceDe(List<dynamic> filas, String sn) {
-      if (sn.isEmpty) return -1;
-      for (var i = 0; i < filas.length; i++) {
-        final f = filas[i];
-        if (f is Map && _snDeFila(f, pestana) == sn) return i;
-      }
-      return -1;
-    }
-
-    void guardar(String clave, List<dynamic> filas) {
-      final datos = Map<String, dynamic>.from(_datosHojas[clave] as Map);
-      datos['rows'] = filas;
-      _datosHojas[clave] = datos;
-    }
-
-    final origen = filasDe(pestana);
-    if (origen == null) return false;
-
-    if (alta) {
-      if (fila == null) return false;
-      origen.add(fila);
-      guardar(pestana, origen);
-    } else if (baja) {
-      final i = indiceDe(origen, snAnterior);
-      if (i < 0) return false;
-      origen.removeAt(i);
-      guardar(pestana, origen);
-      final bajas = filasDe(claveBajas);
-      if (bajas != null && filaBaja != null) {
-        bajas.add(filaBaja);
-        guardar(claveBajas, bajas);
-      } else if (bajas != null) {
-        _datosHojas.remove(claveBajas);
-      }
-    } else if (revertir) {
-      if (fila == null) return false;
-      origen.add(fila);
-      guardar(pestana, origen);
-      final bajas = filasDe(claveBajas);
-      if (bajas != null) {
-        final i = indiceDe(bajas, snAnterior);
-        if (i >= 0) bajas.removeAt(i);
-        guardar(claveBajas, bajas);
-      }
-    } else {
-      if (fila == null) return false;
-      final i = indiceDe(origen, snAnterior);
-      if (i < 0) return false;
-      origen[i] = fila;
-      guardar(pestana, origen);
-    }
-
-    _datosCambiaron();
-    setState(() {});
-    return true;
-  }
-
-  void _resaltarFila(String sn) {
+  void _resaltarFila(String sn, {bool desplazar = true}) {
     _timerResalte?.cancel();
     _snResaltado.value = sn;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _irAFila(sn));
+    if (desplazar) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _irAFila(sn));
+    }
     _timerResalte = Timer(const Duration(seconds: 5), () {
       if (mounted) _snResaltado.value = '';
     });
@@ -1335,6 +1312,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
     if (creado == true && mounted) {
       _trasCambio(pestana: nombrePestana, alta: true);
+    } else {
+      _eventoPropioRecibido = false;
     }
   }
 

@@ -26,8 +26,7 @@ class AuthService {
   static String ultimoError = '';
   static String ultimoMensaje = '';
   static bool ultimaRespuestaPendiente = false;
-  static Map<String, dynamic>? ultimaFila;
-  static Map<String, dynamic>? ultimaFilaBaja;
+  static void Function(Map<String, dynamic> evento)? alEventoPropio;
 
   static UserModel? _usuarioActual;
   static final Map<String, _CacheEntry> _cache = {};
@@ -97,8 +96,6 @@ class AuthService {
       ultimoError = '';
       ultimoMensaje = '';
       ultimaRespuestaPendiente = false;
-      ultimaFila = null;
-      ultimaFilaBaja = null;
     }
 
     try {
@@ -134,12 +131,9 @@ class AuthService {
           if (!lectura) {
             ultimoMensaje = (data['message'] ?? '').toString();
             ultimaRespuestaPendiente = data['pendienteAprobacion'] == true;
-            if (data['fila'] is Map) {
-              ultimaFila = Map<String, dynamic>.from(data['fila'] as Map);
-            }
-            if (data['filaBaja'] is Map) {
-              ultimaFilaBaja =
-                  Map<String, dynamic>.from(data['filaBaja'] as Map);
+            if (data['status'] == 'success' && data['evento'] is Map) {
+              alEventoPropio
+                  ?.call(Map<String, dynamic>.from(data['evento'] as Map));
             }
           }
           if (data['status'] != 'success') {
@@ -426,15 +420,14 @@ class AuthService {
   }
 
   static Future<Map<String, dynamic>?> obtenerCambios(
-      String spreadsheetIdOrUrl) async {
+      String spreadsheetIdOrUrl, String desde) async {
     final data = await _post({
       'action': 'obtenerCambios',
       'actorEmail': await _actor(),
       'spreadsheetId': spreadsheetIdOrUrl,
+      'desde': desde,
     }, sondeo: true);
-    if (_ok(data) && data!['registro'] is Map) {
-      return Map<String, dynamic>.from(data['registro'] as Map);
-    }
+    if (_ok(data)) return Map<String, dynamic>.from(data!);
     return null;
   }
 
