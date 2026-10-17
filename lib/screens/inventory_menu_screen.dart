@@ -142,50 +142,13 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
                 ),
               ),
               Expanded(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 900),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _encabezado(),
-                          const SizedBox(height: 36),
-                          LayoutBuilder(
-                            builder: (context, c) {
-                              final enFila = c.maxWidth >= 760;
-                              final columnas = enFila ? 4 : 2;
-                              const espacio = 18.0;
-                              final ancho =
-                                  (c.maxWidth - espacio * (columnas - 1)) /
-                                      columnas;
-                              return Wrap(
-                                alignment: WrapAlignment.center,
-                                spacing: espacio,
-                                runSpacing: espacio,
-                                children: [
-                                  for (var i = 0; i < _opciones.length; i++)
-                                    _Entrada(
-                                      retraso: 90 * i,
-                                      child: SizedBox(
-                                        width: ancho.clamp(140.0, 210.0),
-                                        child: _Mosaico(
-                                          numero: '0${i + 1}',
-                                          opcion: _opciones[i],
-                                          onTap: () => _abrir(_opciones[i]),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                child: LayoutBuilder(
+                  builder: (context, c) {
+                    final amplio = c.maxWidth >= 760 && c.maxHeight >= 520;
+                    return amplio
+                        ? _vistaAmplia(c)
+                        : _vistaCompacta(c.maxWidth, c.maxHeight);
+                  },
                 ),
               ),
             ],
@@ -195,34 +158,132 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
     );
   }
 
-  Widget _encabezado() {
+  Widget _vistaAmplia(BoxConstraints c) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _encabezado(),
+              const SizedBox(height: 36),
+              LayoutBuilder(
+                builder: (context, cc) {
+                  const espacio = 18.0;
+                  final ancho = (cc.maxWidth - espacio * 3) / 4;
+                  return Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: espacio,
+                    runSpacing: espacio,
+                    children: [
+                      for (var i = 0; i < _opciones.length; i++)
+                        _Entrada(
+                          retraso: 90 * i,
+                          child: SizedBox(
+                            width: ancho.clamp(140.0, 210.0),
+                            child: _Mosaico(
+                              numero: '0${i + 1}',
+                              opcion: _opciones[i],
+                              onTap: () => _abrir(_opciones[i]),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _vistaCompacta(double ancho, double alto) {
+    final apaisado = ancho >= 560;
+    final columnas = apaisado ? 4 : 2;
+    final filas = apaisado ? 1 : 2;
+    const espacio = 12.0;
+
+    Widget celda(int i) => Expanded(
+          child: _Entrada(
+            retraso: 70 * i,
+            child: _Mosaico(
+              numero: '0${i + 1}',
+              opcion: _opciones[i],
+              onTap: () => _abrir(_opciones[i]),
+              relleno: true,
+            ),
+          ),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        children: [
+          _encabezado(compacto: true, alto: alto),
+          SizedBox(height: alto < 520 ? 10 : 18),
+          Expanded(
+            child: Column(
+              children: [
+                for (var f = 0; f < filas; f++) ...[
+                  if (f > 0) const SizedBox(height: espacio),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        for (var k = 0; k < columnas; k++) ...[
+                          if (k > 0) const SizedBox(width: espacio),
+                          celda(f * columnas + k),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _encabezado({bool compacto = false, double alto = 800}) {
+    final altoLogo = compacto ? (alto * 0.085).clamp(30.0, 56.0) : 76.0;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(height: 76, child: _logo()),
-        const SizedBox(height: 18),
-        const Text(
+        SizedBox(height: altoLogo, child: _logo()),
+        SizedBox(height: compacto ? 8 : 18),
+        Text(
           'INVENTARIO GENERAL',
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontSize: 13,
+            fontSize: compacto ? 10.5 : 13,
             fontWeight: FontWeight.w700,
-            letterSpacing: 4,
-            color: Color(0xFF9B87BA),
+            letterSpacing: compacto ? 3 : 4,
+            color: const Color(0xFF9B87BA),
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          _nombreCorto(),
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.w300,
-            letterSpacing: 5,
-            height: 1.15,
-            color: _morado,
+        SizedBox(height: compacto ? 4 : 8),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            _nombreCorto(),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(
+              fontSize: compacto ? 24 : 32,
+              fontWeight: FontWeight.w300,
+              letterSpacing: compacto ? 3 : 5,
+              height: 1.15,
+              color: _morado,
+            ),
           ),
         ),
-        const SizedBox(height: 16),
+        SizedBox(height: compacto ? 8 : 16),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -269,11 +330,13 @@ class _Mosaico extends StatefulWidget {
   final String numero;
   final _OpcionMenu opcion;
   final VoidCallback onTap;
+  final bool relleno;
 
   const _Mosaico({
     required this.numero,
     required this.opcion,
     required this.onTap,
+    this.relleno = false,
   });
 
   @override
@@ -289,47 +352,7 @@ class _MosaicoState extends State<_Mosaico> {
   @override
   Widget build(BuildContext context) {
     final activo = _encima || _presionado;
-    return RepaintBoundary(
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _encima = true),
-        onExit: (_) => setState(() => _encima = false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (_) => setState(() => _presionado = true),
-          onTapCancel: () => setState(() => _presionado = false),
-          onTapUp: (_) => setState(() => _presionado = false),
-          onTap: widget.onTap,
-          child: AnimatedSlide(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            offset: Offset(0, _encima && !_presionado ? -0.03 : 0),
-            child: AnimatedScale(
-              scale: _presionado ? 0.97 : 1,
-              duration: const Duration(milliseconds: 140),
-              curve: Curves.easeOut,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 22),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: activo
-                        ? const Color(0xFFB9A5D3)
-                        : const Color(0xFFEFE8F6),
-                    width: 1.2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _morado.withOpacity(activo ? 0.16 : 0.06),
-                      blurRadius: activo ? 26 : 16,
-                      offset: Offset(0, activo ? 12 : 6),
-                    ),
-                  ],
-                ),
-                child: Column(
+    final contenido = Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Align(
@@ -396,7 +419,57 @@ class _MosaicoState extends State<_Mosaico> {
                           size: 18, color: _morado),
                     ),
                   ],
+                );
+    return RepaintBoundary(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _encima = true),
+        onExit: (_) => setState(() => _encima = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (_) => setState(() => _presionado = true),
+          onTapCancel: () => setState(() => _presionado = false),
+          onTapUp: (_) => setState(() => _presionado = false),
+          onTap: widget.onTap,
+          child: AnimatedSlide(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            offset: Offset(0, _encima && !_presionado ? -0.03 : 0),
+            child: AnimatedScale(
+              scale: _presionado ? 0.97 : 1,
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                padding: widget.relleno
+                    ? const EdgeInsets.fromLTRB(10, 8, 10, 10)
+                    : const EdgeInsets.fromLTRB(16, 14, 16, 22),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: activo
+                        ? const Color(0xFFB9A5D3)
+                        : const Color(0xFFEFE8F6),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _morado.withOpacity(activo ? 0.16 : 0.06),
+                      blurRadius: activo ? 26 : 16,
+                      offset: Offset(0, activo ? 12 : 6),
+                    ),
+                  ],
                 ),
+                child: widget.relleno
+                    ? Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: SizedBox(width: 150, child: contenido),
+                        ),
+                      )
+                    : contenido,
               ),
             ),
           ),
