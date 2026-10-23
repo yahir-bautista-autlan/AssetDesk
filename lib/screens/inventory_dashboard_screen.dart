@@ -2375,8 +2375,25 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     }
   }
 
+  late final Map<String, String> _clavesNorm = {
+    for (final k in widget.fila.keys) _normalizarClave(k): k,
+  };
+
+  static String _normalizarClave(String k) {
+    var n = k.toLowerCase().trim();
+    const acentos = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u'};
+    acentos.forEach((a, b) => n = n.replaceAll(a, b));
+    n = n.replaceAll(RegExp(r'\s+'), ' ');
+    return n == 'unidad' ? 'ubicacion' : n;
+  }
+
+  String _claveReal(String key) {
+    if (widget.fila.containsKey(key)) return key;
+    return _clavesNorm[_normalizarClave(key)] ?? key;
+  }
+
   String _valor(String key) {
-    final v = widget.fila[key];
+    final v = widget.fila[_claveReal(key)];
     return v == null ? '' : v.toString().trim();
   }
 
@@ -2397,11 +2414,11 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     final usadas = <String>{};
     for (final s in _config.secciones) {
       for (final f in s.campos) {
-        usadas.add(f.key);
+        usadas.add(_claveReal(f.key));
       }
     }
-    usadas.add(_config.snKey);
-    usadas.addAll(_config.tituloKeys);
+    usadas.add(_claveReal(_config.snKey));
+    usadas.addAll(_config.tituloKeys.map(_claveReal));
     usadas.add('Estatus');
 
     final resultado = _config.secciones

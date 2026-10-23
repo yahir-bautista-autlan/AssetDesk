@@ -177,7 +177,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   bool _cargandoUsuario = true;
   String _responsable = '';
-  late final String _fechaAuto;
   late final String _ubicacionAuto;
   bool _guardando = false;
   String? _errorGeneral;
@@ -189,7 +188,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   @override
   void initState() {
     super.initState();
-    _fechaAuto = _formatearFechaHoraActual();
     _ubicacionAuto = widget.inventario?.ubicacion ?? '';
 
     final snKey = _mapaSnKeyGlobal[widget.nombrePestana];
@@ -219,6 +217,17 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     return '${p2(n.day)}/${p2(n.month)}/${n.year} ${p2(n.hour)}:${p2(n.minute)}';
   }
 
+  String _usuarioDominioInventario() {
+    try {
+      final correo =
+          ((widget.inventario as dynamic)?.responsableEmail ?? '').toString();
+      final limpio = correo.trim();
+      return limpio.isEmpty ? '' : limpio.split('@').first;
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> _cargarResponsable() async {
     if (_esEdicion) {
       final existente = widget.existingData?['Responsable']?.toString().trim();
@@ -229,6 +238,15 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         });
         return;
       }
+    }
+
+    final deInventario = _usuarioDominioInventario();
+    if (deInventario.isNotEmpty) {
+      setState(() {
+        _responsable = deInventario;
+        _cargandoUsuario = false;
+      });
+      return;
     }
 
     final user = await AuthService.obtenerUsuarioActual();
@@ -408,11 +426,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   String _valorEstaticoPara(String header) {
     if (header == 'Fecha/Hora' || header == 'FechaRegistro' || header == 'Fecha') {
-      if (_esEdicion) {
-        final existente = widget.existingData?[header]?.toString().trim();
-        if (existente != null && existente.isNotEmpty) return existente;
-      }
-      return _fechaAuto;
+      return _formatearFechaHoraActual();
     }
     if (header == 'Responsable') {
       return _cargandoUsuario ? 'Cargando...' : _responsable;

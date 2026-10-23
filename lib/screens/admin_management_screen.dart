@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
@@ -1630,6 +1632,179 @@ class _InventarioDialogState extends State<_InventarioDialog> {
     return null;
   }
 
+  Future<ui.Image> _decodificar(Uint8List origen, int maxLado) async {
+    final base = await ui.instantiateImageCodec(origen);
+    final f = await base.getNextFrame();
+    final w = f.image.width;
+    final h = f.image.height;
+    f.image.dispose();
+    base.dispose();
+    final mayor = w > h ? w : h;
+    final reducir = mayor > maxLado;
+    final codec = await ui.instantiateImageCodec(
+      origen,
+      targetWidth: reducir && w >= h ? maxLado : null,
+      targetHeight: reducir && h > w ? maxLado : null,
+    );
+    final frame = await codec.getNextFrame();
+    codec.dispose();
+    return frame.image;
+  }
+
+  void _quitarFondo(Uint8List px, int w, int h) {
+    final esquinas = <int>[0, w - 1, (h - 1) * w, (h - 1) * w + w - 1];
+    var transparentes = 0;
+    for (final p in esquinas) {
+      if (px[p * 4 + 3] < 200) transparentes++;
+    }
+    if (transparentes >= 3) return;
+
+    var r = 0, g = 0, b = 0;
+    for (final p in esquinas) {
+      r += px[p * 4];
+      g += px[p * 4 + 1];
+      b += px[p * 4 + 2];
+    }
+    r ~/= 4;
+    g ~/= 4;
+    b ~/= 4;
+
+    int dist2(int i) {
+      final dr = px[i] - r;
+      final dg = px[i + 1] - g;
+      final db = px[i + 2] - b;
+      return dr * dr + dg * dg + db * db;
+    }
+
+    for (final p in esquinas) {
+      if (dist2(p * 4) > 45 * 45) return;
+    }
+
+    const tol = 42;
+    const tol2 = tol * tol;
+    final visto = Uint8List(w * h);
+    final pila = Int32List(w * h);
+    var tope = 0;
+
+    void empujar(int p) {
+      if (visto[p] == 1) return;
+      final i = p * 4;
+      if (px[i + 3] < 20 || dist2(i) <= tol2) {
+        visto[p] = 1;
+        pila[tope++] = p;
+      }
+    }
+
+    for (var x = 0; x < w; x++) {
+      empujar(x);
+      empujar((h - 1) * w + x);
+    }
+    for (var y = 0; y < h; y++) {
+      empujar(y * w);
+      empujar(y * w + w - 1);
+    }
+
+    while (tope > 0) {
+      final p = pila[--tope];
+      final x = p % w;
+      final y = p ~/ w;
+      if (x > 0) empujar(p - 1);
+      if (x < w - 1) empujar(p + 1);
+      if (y > 0) empujar(p - w);
+      if (y < h - 1) empujar(p + w);
+    }
+
+    final borde = <int>[];
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        final p = y * w + x;
+        if (visto[p] == 1) continue;
+        final vecino = (x > 0 && visto[p - 1] == 1) ||
+            (x < w - 1 && visto[p + 1] == 1) ||
+            (y > 0 && visto[p - w] == 1) ||
+            (y < h - 1 && visto[p + w] == 1);
+        if (vecino) borde.add(p);
+      }
+    }
+
+    for (var p = 0; p < w * h; p++) {
+      if (visto[p] == 1) px[p * 4 + 3] = 0;
+    }
+
+    for (final p in borde) {
+      final d = math.sqrt(dist2(p * 4).toDouble());
+      if (d < tol * 2) {
+        final alfa = ((d - tol) / tol).clamp(0.0, 1.0);
+        final actual = px[p * 4 + 3];
+        px[p * 4 + 3] = (actual * alfa).round();
+      }
+    }
+  }
+
+  Future<Uint8List?> _normalizarLogo(Uint8List origen) async {
+    try {
+      final img = await _decodificar(origen, 1000);
+      final w = img.width;
+      final h = img.height;
+      final datos = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+      img.dispose();
+      if (datos == null) return null;
+      final px = Uint8List.fromList(datos.buffer.asUint8List());
+
+      _quitarFondo(px, w, h);
+
+      var minX = w, minY = h, maxX = -1, maxY = -1;
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          if (px[(y * w + x) * 4 + 3] > 20) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX < 0) return null;
+
+      final recorte = ui.Rect.fromLTRB(minX.toDouble(), minY.toDouble(),
+          (maxX + 1).toDouble(), (maxY + 1).toDouble());
+
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+          px, w, h, ui.PixelFormat.rgba8888, completer.complete);
+      final procesada = await completer.future;
+
+      for (final ancho in const [900, 700, 500, 360]) {
+        final alto = (ancho * 0.4).round();
+        final margen = ancho * 0.03;
+        final escala = math.min((ancho - 2 * margen) / recorte.width,
+            (alto - 2 * margen) / recorte.height);
+        final dw = recorte.width * escala;
+        final dh = recorte.height * escala;
+        final destino =
+            ui.Rect.fromLTWH((ancho - dw) / 2, (alto - dh) / 2, dw, dh);
+
+        final grabador = ui.PictureRecorder();
+        final lienzo = ui.Canvas(grabador);
+        lienzo.drawImageRect(procesada, recorte, destino,
+            ui.Paint()..filterQuality = ui.FilterQuality.high);
+        final dibujo = grabador.endRecording();
+        final salida = await dibujo.toImage(ancho, alto);
+        final png = await salida.toByteData(format: ui.ImageByteFormat.png);
+        salida.dispose();
+        dibujo.dispose();
+        if (png == null) continue;
+        final bytes = png.buffer.asUint8List();
+        if (bytes.length <= _maxLogo) {
+          procesada.dispose();
+          return bytes;
+        }
+      }
+      procesada.dispose();
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _elegir(bool esLogo) async {
     final archivo = await FilePicker.pickFile(
       type: FileType.custom,
@@ -1656,7 +1831,23 @@ class _InventarioDialogState extends State<_InventarioDialog> {
     final ext = (archivo.extension ?? '').toLowerCase();
     var mime = ext == 'png' ? 'image/png' : 'image/jpeg';
 
-    if (bytes.length > limite) {
+    var logoListo = false;
+    if (esLogo) {
+      setState(() {
+        _procesando = true;
+        _error = null;
+      });
+      final normalizado = await _normalizarLogo(bytes);
+      if (!mounted) return;
+      setState(() => _procesando = false);
+      if (normalizado != null) {
+        bytes = normalizado;
+        mime = 'image/png';
+        logoListo = true;
+      }
+    }
+
+    if (!logoListo && bytes.length > limite) {
       setState(() {
         _procesando = true;
         _error = null;
@@ -1849,7 +2040,7 @@ class _InventarioDialogState extends State<_InventarioDialog> {
                 titulo: _esEdicion
                     ? 'LOGO (responsiva)'
                     : 'LOGO (responsiva) *',
-                detalle: 'PNG o JPG. Si pesa más de 600 KB se optimiza automáticamente',
+                detalle: 'PNG o JPG. Se quita el fondo y se ajusta a un tamaño estándar automáticamente',
                 esLogo: true,
                 bytes: _logoBytes,
                 fileId: widget.inicial?.logoId ?? '',
@@ -1873,7 +2064,7 @@ class _InventarioDialogState extends State<_InventarioDialog> {
                         height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2)),
                     SizedBox(width: 8),
-                    Text('Optimizando imagen...',
+                    Text('Procesando imagen...',
                         style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
                   ],
                 ),

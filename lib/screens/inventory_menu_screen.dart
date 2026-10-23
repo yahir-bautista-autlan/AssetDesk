@@ -127,7 +127,19 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
             stops: [0, 0.55],
           ),
         ),
-        child: SafeArea(
+        child: Stack(
+          children: [
+            const Positioned(top: -90, right: -70, child: _Halo(280)),
+            const Positioned(bottom: -120, left: -90, child: _Halo(320)),
+            Positioned.fill(child: _contenido()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _contenido() {
+    return SafeArea(
           child: Column(
             children: [
               Padding(
@@ -154,49 +166,50 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
               ),
             ],
           ),
-        ),
-      ),
     );
   }
 
   Widget _vistaAmplia(BoxConstraints c) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _encabezado(),
-              const SizedBox(height: 36),
-              LayoutBuilder(
-                builder: (context, cc) {
-                  const espacio = 18.0;
-                  final ancho = (cc.maxWidth - espacio * 3) / 4;
-                  return Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: espacio,
-                    runSpacing: espacio,
-                    children: [
-                      for (var i = 0; i < _opciones.length; i++)
-                        _Entrada(
-                          retraso: 90 * i,
-                          child: SizedBox(
-                            width: ancho.clamp(140.0, 210.0),
-                            child: _Mosaico(
-                              numero: '0${i + 1}',
-                              opcion: _opciones[i],
-                              onTap: () => _abrir(_opciones[i]),
-                            ),
+          constraints: const BoxConstraints(maxWidth: 1130, maxHeight: 720),
+          child: SizedBox.expand(
+            child: FittedBox(
+              fit: BoxFit.contain,
+              alignment: Alignment.center,
+              child: SizedBox(
+            width: 900,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _encabezado(),
+                const SizedBox(height: 36),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < _opciones.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 18),
+                      _Entrada(
+                        retraso: 90 * i,
+                        child: SizedBox(
+                          width: 178,
+                          child: _Mosaico(
+                            opcion: _opciones[i],
+                            onTap: () => _abrir(_opciones[i]),
                           ),
                         ),
+                      ),
                     ],
-                  );
-                },
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
+        ),
+        ),
         ),
       ),
     );
@@ -212,7 +225,6 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
           child: _Entrada(
             retraso: 70 * i,
             child: _Mosaico(
-              numero: '0${i + 1}',
               opcion: _opciones[i],
               onTap: () => _abrir(_opciones[i]),
               relleno: true,
@@ -251,11 +263,15 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
   }
 
   Widget _encabezado({bool compacto = false, double alto = 800}) {
-    final altoLogo = compacto ? (alto * 0.085).clamp(30.0, 56.0) : 76.0;
+    final altoLogo = compacto ? (alto * 0.14).clamp(48.0, 92.0) : 132.0;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(height: altoLogo, child: _logo()),
+        SizedBox(
+          width: compacto ? altoLogo * 3.4 : 380,
+          height: altoLogo,
+          child: _logo(),
+        ),
         SizedBox(height: compacto ? 8 : 18),
         Text(
           'INVENTARIO GENERAL',
@@ -284,24 +300,28 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
             ),
           ),
         ),
-        SizedBox(height: compacto ? 8 : 16),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 36, height: 1, color: const Color(0xFFD9C8EA)),
-            Container(
-              width: 6,
-              height: 6,
-              margin: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: const BoxDecoration(
-                color: Color(0xFFB9A5D3),
-                shape: BoxShape.circle,
-              ),
-            ),
-            Container(width: 36, height: 1, color: const Color(0xFFD9C8EA)),
-          ],
-        ),
       ],
+    );
+  }
+}
+
+class _Halo extends StatelessWidget {
+  final double tamano;
+  const _Halo(this.tamano);
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: tamano,
+        height: tamano,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [Color(0x1A532E7C), Color(0x00532E7C)],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -328,13 +348,11 @@ class _Entrada extends StatelessWidget {
 }
 
 class _Mosaico extends StatefulWidget {
-  final String numero;
   final _OpcionMenu opcion;
   final VoidCallback onTap;
   final bool relleno;
 
   const _Mosaico({
-    required this.numero,
     required this.opcion,
     required this.onTap,
     this.relleno = false,
@@ -356,25 +374,13 @@ class _MosaicoState extends State<_Mosaico> {
     final contenido = Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        widget.numero,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.5,
-                          color: Color(0xFFC9BADD),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 220),
-                      width: 68,
-                      height: 68,
+                      width: 58,
+                      height: 58,
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(19),
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -382,19 +388,28 @@ class _MosaicoState extends State<_Mosaico> {
                               ? const [Color(0xFF6B3E9A), Color(0xFF532E7C)]
                               : const [Color(0xFFF6F1FB), Color(0xFFEFE8F6)],
                         ),
+                        boxShadow: activo
+                            ? [
+                                BoxShadow(
+                                  color: _morado.withOpacity(0.28),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ]
+                            : const [],
                       ),
                       child: Icon(
                         widget.opcion.icono,
-                        size: 30,
+                        size: 26,
                         color: activo ? Colors.white : _morado,
                       ),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
                     Text(
                       widget.opcion.titulo,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        fontSize: 17,
+                        fontSize: 16,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.3,
                         color: _morado,
@@ -407,7 +422,7 @@ class _MosaicoState extends State<_Mosaico> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 11.5,
                         height: 1.3,
                         color: Color(0xFF6B7280),
                       ),
@@ -445,7 +460,7 @@ class _MosaicoState extends State<_Mosaico> {
                 curve: Curves.easeOutCubic,
                 padding: widget.relleno
                     ? const EdgeInsets.fromLTRB(10, 8, 10, 10)
-                    : const EdgeInsets.fromLTRB(16, 14, 16, 22),
+                    : const EdgeInsets.fromLTRB(14, 16, 14, 16),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(28),
