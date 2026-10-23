@@ -91,15 +91,10 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
   Timer? _timerResalte;
 
   static const Map<String, List<String>> _snPorPestana = {
-    'Captura': ['Numero de Serie', 'Número de Serie', 'Numero de serie'],
-    'Impresoras': ['Num. de Serie', 'Numero de Serie', 'Número de serie'],
-    'Otros': ['NoSerie', 'Numero de Serie'],
-    'Consumibles': [
-      'Numero de serie',
-      'Número de serie',
-      'Numero de Serie',
-      'NoSerie'
-    ],
+    'Captura': ['Numero de Serie'],
+    'Impresoras': ['Numero de Serie'],
+    'Otros': ['Numero de Serie'],
+    'Consumibles': ['Numero de Serie'],
   };
 
   final TextEditingController _searchController = TextEditingController();
@@ -849,9 +844,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
     const mapaSnKey = {
       'Captura': 'Numero de Serie',
-      'Impresoras': 'Num. de Serie',
-      'Otros': 'NoSerie',
-      'Consumibles': 'Numero de serie',
+      'Impresoras': 'Numero de Serie',
+      'Otros': 'Numero de Serie',
+      'Consumibles': 'Numero de Serie',
     };
 
     String? pestanaEncontrada;
@@ -2266,7 +2261,7 @@ const _capturaConfig = _DetailConfig(
 
 const _impresorasConfig = _DetailConfig(
   tituloKeys: ['Nombre'],
-  snKey: 'Num. de Serie',
+  snKey: 'Numero de Serie',
   badge: 'Impresora',
   secciones: [
     _DetailSection('Datos generales', [
@@ -2277,7 +2272,7 @@ const _impresorasConfig = _DetailConfig(
     ]),
     _DetailSection('Hardware y Red', [
       _DetailField('Modelo', 'Modelo'),
-      _DetailField('Num. de Serie', 'Número de Serie'),
+      _DetailField('Numero de Serie', 'Número de Serie'),
       _DetailField('Direccion IP', 'Dirección IP'),
     ]),
     _DetailSection('Detalles adicionales', [
@@ -2289,19 +2284,19 @@ const _impresorasConfig = _DetailConfig(
 
 const _otrosConfig = _DetailConfig(
   tituloKeys: ['Nombre'],
-  snKey: 'NoSerie',
+  snKey: 'Numero de Serie',
   badge: 'Activo',
   secciones: [
     _DetailSection('Datos generales', [
       _DetailField('Nombre', 'Nombre'),
-      _DetailField('Unidad', 'Unidad'),
+      _DetailField('Ubicación', 'Ubicación'),
       _DetailField('Responsable', 'Responsable'),
       _DetailField('Departamento', 'Departamento'),
     ]),
     _DetailSection('Hardware y Red', [
       _DetailField('Equipo', 'Equipo'),
       _DetailField('Modelo', 'Modelo'),
-      _DetailField('NoSerie', 'Número de Serie'),
+      _DetailField('Numero de Serie', 'Número de Serie'),
     ]),
     _DetailSection('Detalles adicionales', [
       _DetailField('FechaRegistro', 'Fecha de Registro'),
@@ -2312,7 +2307,7 @@ const _otrosConfig = _DetailConfig(
 
 const _consumiblesConfig = _DetailConfig(
   tituloKeys: ['Impresora', 'Modelo'],
-  snKey: 'Numero de serie',
+  snKey: 'Numero de Serie',
   badge: 'Consumible',
   secciones: [
     _DetailSection('Información del Consumible', [
@@ -2322,7 +2317,7 @@ const _consumiblesConfig = _DetailConfig(
       _DetailField('Tipo', 'Tipo'),
       _DetailField('Departamento', 'Departamento'),
       _DetailField('Proveedor', 'Proveedor'),
-      _DetailField('Numero de serie', 'Número de Serie'),
+      _DetailField('Numero de Serie', 'Número de Serie'),
       _DetailField('Responsable', 'Responsable'),
       _DetailField('Fecha', 'Fecha'),
       _DetailField('Comentarios', 'Comentarios'),

@@ -5,9 +5,9 @@ import 'qr_view_screen.dart';
 
 const Map<String, String> _mapaSnKeyGlobal = {
   'Captura': 'Numero de Serie',
-  'Impresoras': 'Num. de Serie',
-  'Otros': 'NoSerie',
-  'Consumibles': 'Numero de serie',
+  'Impresoras': 'Numero de Serie',
+  'Otros': 'Numero de Serie',
+  'Consumibles': 'Numero de Serie',
 };
 
 const Map<String, String> _categoriaCaptura = {
@@ -65,7 +65,7 @@ const Map<String, String> _categoriaImpresoras = {
   'Departamento': 'Datos generales',
   'Estatus': 'Datos generales',
   'Modelo': 'Hardware y Red',
-  'Num. de Serie': 'Hardware y Red',
+  'Numero de Serie': 'Hardware y Red',
   'Direccion IP': 'Hardware y Red',
   'FechaRegistro': 'Detalles adicionales',
   'Comentarios': 'Detalles adicionales',
@@ -79,13 +79,13 @@ const List<String> _ordenSeccionesImpresoras = [
 
 const Map<String, String> _categoriaOtros = {
   'Nombre': 'Datos generales',
-  'Unidad': 'Datos generales',
+  'Ubicación': 'Datos generales',
   'Responsable': 'Datos generales',
   'Departamento': 'Datos generales',
   'Estatus': 'Datos generales',
   'Equipo': 'Hardware y Red',
   'Modelo': 'Hardware y Red',
-  'NoSerie': 'Hardware y Red',
+  'Numero de Serie': 'Hardware y Red',
   'FechaRegistro': 'Detalles adicionales',
   'Comentarios': 'Detalles adicionales',
 };
@@ -103,7 +103,7 @@ const Map<String, String> _categoriaConsumibles = {
   'Tipo': 'Información del Consumible',
   'Departamento': 'Información del Consumible',
   'Proveedor': 'Información del Consumible',
-  'Numero de serie': 'Información del Consumible',
+  'Numero de Serie': 'Información del Consumible',
   'Responsable': 'Información del Consumible',
   'Fecha': 'Información del Consumible',
   'Comentarios': 'Información del Consumible',
@@ -158,19 +158,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   static const Set<String> _camposTamano = {'Disco Duro', 'Memoria'};
 
-  static const Map<String, List<String>> _opcionesPorDefecto = {
-    'Equipo': ['PC', 'Laptop'],
-    'Disco Duro': ['256GB SSD', '512GB SSD', '1TB SSD', '1TB HDD'],
-    'Memoria': ['8GB', '16GB', '32GB', '64GB'],
-    'Sistema Operativo': ['Windows 10', 'Windows 11', 'macOS', 'Linux'],
-    'Departamento': [],
-    'Estatus': ['Stock', 'Asignado'],
-    'Color': ['Cyan', 'Magenta', 'Amarillo', 'Negro', 'Otro'],
-    'Tipo': ['EcoTank', 'Cartucho', 'Tóner', 'Botella'],
-  };
-
-  static const String _otroSentinel = '__otro__';
-
   bool get _esEdicion => widget.existingData != null;
 
   bool get _requiereAprobacion {
@@ -185,7 +172,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, TextEditingController> _otroControllers = {};
-  final Map<String, String?> _selectValues = {};
   final Map<String, List<String>> _opcionesPorCampo = {};
   final Map<String, String?> _erroresSelect = {};
 
@@ -315,9 +301,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
           final v = row[header]?.toString();
           if (v != null) agregar(v);
         }
-        for (final f in _opcionesPorDefecto[header] ?? const <String>[]) {
-          agregar(f);
-        }
         agregar(valorExistente);
 
         final combinadas = vistos.values.toList();
@@ -345,8 +328,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         }
 
         _opcionesPorCampo[header] = combinadas;
-        _selectValues[header] = seleccionado;
-        _otroControllers[header] = TextEditingController();
+        _otroControllers[header] = TextEditingController(text: seleccionado ?? '');
       } else {
         _controllers[header] = TextEditingController(text: valorExistenteCrudo);
       }
@@ -510,18 +492,11 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
     for (final header in _camposSelect) {
       if (!widget.headers.contains(header)) continue;
-      final seleccionado = _selectValues[header];
-      if (seleccionado == null) {
-        _erroresSelect[header] = 'Selecciona una opción';
+      final texto = _otroControllers[header]?.text.trim() ?? '';
+      if (texto.isEmpty) {
+        _erroresSelect[header] = 'Escribe o elige un valor';
         huboError = true;
         _expandirSeccionDe(header);
-      } else if (seleccionado == _otroSentinel) {
-        final texto = _otroControllers[header]?.text.trim() ?? '';
-        if (texto.isEmpty) {
-          _erroresSelect[header] = 'Especifica el valor';
-          huboError = true;
-          _expandirSeccionDe(header);
-        }
       }
     }
 
@@ -538,10 +513,17 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       if (_camposEstaticos.contains(header)) {
         datos[header] = _valorEstaticoPara(header);
       } else if (_camposSelect.contains(header)) {
-        final seleccionado = _selectValues[header];
-        datos[header] = seleccionado == _otroSentinel
-            ? _canonico(header, _otroControllers[header]?.text ?? '')
-            : (seleccionado ?? '');
+        final escrito =
+            _canonico(header, _otroControllers[header]?.text ?? '');
+        final clave = _claveComparacion(escrito);
+        String? existente;
+        for (final o in _opcionesPorCampo[header] ?? const <String>[]) {
+          if (_claveComparacion(o) == clave) {
+            existente = o;
+            break;
+          }
+        }
+        datos[header] = existente ?? escrito;
       } else {
         datos[header] = _controllers[header]?.text.trim() ?? '';
       }
@@ -982,57 +964,59 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   }
 
   Widget _buildCampoSelect(String header) {
-    final opciones = _opcionesPorCampo[header] ?? const [];
-    final valorActual = _selectValues[header];
+    final opciones = _opcionesPorCampo[header] ?? const <String>[];
     final error = _erroresSelect[header];
+    final controlador = _otroControllers[header]!;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _label(header),
-        DropdownButtonFormField<String>(
-          initialValue: valorActual,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF9CA3AF)),
-          items: [
-            ...opciones.map(
-              (o) => DropdownMenuItem(
-                value: o,
-                child: Text(
-                  o,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14, color: Colors.black87),
-                ),
-              ),
-            ),
-            const DropdownMenuItem(
-              value: _otroSentinel,
-              child: Text(
-                'Otro (especificar)',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: primaryPurple,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-          onChanged: (v) {
-            setState(() {
-              _selectValues[header] = v;
-              _erroresSelect.remove(header);
-            });
+        TextFormField(
+          controller: controlador,
+          style: const TextStyle(fontSize: 14, color: Colors.black87),
+          onChanged: (_) {
+            if (_erroresSelect.containsKey(header)) {
+              setState(() => _erroresSelect.remove(header));
+            }
           },
-          decoration: _decoracionBase().copyWith(errorText: error),
+          decoration: _decoracionBase(
+            hint: opciones.isEmpty
+                ? 'Escribe el valor'
+                : 'Escribe o elige una opción',
+            suffixIcon: opciones.isEmpty
+                ? null
+                : PopupMenuButton<String>(
+                    tooltip: 'Ver opciones',
+                    icon: const Icon(Icons.keyboard_arrow_down,
+                        color: Color(0xFF9CA3AF)),
+                    color: Colors.white,
+                    constraints: const BoxConstraints(maxHeight: 320),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    onSelected: (v) {
+                      setState(() {
+                        controlador.text = v;
+                        controlador.selection =
+                            TextSelection.collapsed(offset: v.length);
+                        _erroresSelect.remove(header);
+                      });
+                    },
+                    itemBuilder: (_) => [
+                      for (final o in opciones)
+                        PopupMenuItem<String>(
+                          value: o,
+                          child: Text(
+                            o,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 14, color: Colors.black87),
+                          ),
+                        ),
+                    ],
+                  ),
+          ).copyWith(errorText: error),
         ),
-        if (valorActual == _otroSentinel) ...[
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _otroControllers[header],
-            style: const TextStyle(fontSize: 14, color: Colors.black87),
-            decoration: _decoracionBase(hint: 'Escribe el valor...'),
-          ),
-        ],
       ],
     );
   }

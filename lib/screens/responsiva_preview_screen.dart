@@ -182,14 +182,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
   String _na(String v) => v.trim().isEmpty ? 'N/A' : v.trim();
 
   String _snKeyPara(String pestana) {
-    switch (pestana) {
-      case 'Impresoras':
-        return 'Num. de Serie';
-      case 'Otros':
-        return 'NoSerie';
-      default:
-        return 'Numero de Serie';
-    }
+    return 'Numero de Serie';
   }
 
   String get _nombreArchivo {
