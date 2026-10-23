@@ -46,7 +46,7 @@ class AuthService {
   static bool get _recibeAvisosSolicitudes {
     final u = _usuarioActual;
     if (u == null) return false;
-    return u.esAdmin || u.inventarios.any((i) => i.esResponsable(u.correo));
+    return u.inventarios.any((i) => i.esResponsable(u.correo));
   }
 
   static bool get _enPrimerPlano {

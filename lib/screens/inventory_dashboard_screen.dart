@@ -189,7 +189,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
   bool get _puedeAprobar {
     final u = _user;
     if (u == null) return false;
-    return u.esAdmin || u.inventarios.any((i) => i.esResponsable(u.correo));
+    return u.inventarios.any((i) => i.esResponsable(u.correo));
   }
 
   @override
