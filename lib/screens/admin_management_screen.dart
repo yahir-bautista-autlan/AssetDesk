@@ -238,7 +238,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   Future<bool> _confirmar(String titulo, String cuerpo, String accion) async {
     final r = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => _Compacto(ancho: 340, child: AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(titulo,
@@ -260,7 +260,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                     fontSize: 15)),
           ),
         ],
-      ),
+      )),
     );
     return r == true;
   }
@@ -2272,6 +2272,22 @@ class _InventarioDialogState extends State<_InventarioDialog> {
                   color: primaryPurple, fontWeight: FontWeight.bold)),
         ),
       ],
+    );
+  }
+}
+
+class _Compacto extends StatelessWidget {
+  final double ancho;
+  final Widget child;
+  const _Compacto({required this.ancho, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: ancho + 48),
+        child: child,
+      ),
     );
   }
 }

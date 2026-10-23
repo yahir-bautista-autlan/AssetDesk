@@ -1501,7 +1501,7 @@ class _ComentarioRechazoDialogState extends State<_ComentarioRechazoDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return _Compacto(ancho: 380, child: AlertDialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text('Rechazar solicitud',
@@ -1547,7 +1547,7 @@ class _ComentarioRechazoDialogState extends State<_ComentarioRechazoDialog> {
                   color: Color(0xFFDC2626), fontWeight: FontWeight.bold)),
         ),
       ],
-    );
+    ));
   }
 }
 
