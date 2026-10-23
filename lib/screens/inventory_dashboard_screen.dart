@@ -87,8 +87,8 @@ bool _avisarSiPendiente(BuildContext context) {
           ? 'Tu cambio fue enviado al responsable del inventario para su aprobación.'
           : AuthService.ultimoMensaje),
       backgroundColor: const Color(0xFFF59E0B),
-      duration: const Duration(seconds: 6),
-          ),
+      duration: const Duration(seconds: 4),
+    ),
   );
   return true;
 }
@@ -684,7 +684,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
         width: _anchoAviso(context),
-        duration: Duration(seconds: duracion),
+        duration: Duration(seconds: duracion > 4 ? 4 : duracion),
+        persist: false,
         action: etiqueta == null
             ? null
             : SnackBarAction(
@@ -1378,23 +1379,39 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            RepaintBoundary(child: _buildHeaderArea()),
-            const Divider(height: 1, color: Color(0xFFF3F4F6)),
-            Expanded(
-              child: RepaintBoundary(
-                child: AnimatedBuilder(
-                  animation: _tableListenable,
-                  builder: (context, _) => _buildTableArea(),
-                ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: SafeArea(
+              child: Column(
+                children: [
+                  RepaintBoundary(child: _buildHeaderArea()),
+                  const Divider(height: 1, color: Color(0xFFF3F4F6)),
+                  Expanded(
+                    child: RepaintBoundary(
+                      child: AnimatedBuilder(
+                        animation: _tableListenable,
+                        builder: (context, _) => _buildTableArea(),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: _botonEscanear(),
+          ),
+        ],
       ),
-      floatingActionButton: RepaintBoundary(
+      bottomNavigationBar: RepaintBoundary(child: _buildBottomNav()),
+    );
+  }
+
+  Widget _botonEscanear() {
+    return RepaintBoundary(
         child: Container(
           decoration: BoxDecoration(
             color: primaryPurple,
@@ -1433,10 +1450,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
             ),
           ),
         ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      bottomNavigationBar: RepaintBoundary(child: _buildBottomNav()),
-    );
+      );
   }
 
   Widget _avatar() {

@@ -96,7 +96,8 @@ class _AssetDeskAppState extends State<AssetDeskApp>
           behavior: SnackBarBehavior.floating,
           width: ancho > 640 ? 440 : null,
           backgroundColor: const Color(0xFF532E7C),
-          duration: const Duration(seconds: 10),
+          duration: const Duration(seconds: 4),
+          persist: false,
           content: Row(
             children: [
               const Icon(Icons.notifications_active_outlined,
@@ -162,7 +163,7 @@ class _AssetDeskAppState extends State<AssetDeskApp>
             content: Text(
                 'Tu sesión se cerró por 15 minutos de inactividad. Inicia sesión de nuevo.'),
             backgroundColor: Color(0xFF4A2574),
-            duration: Duration(seconds: 8),
+            duration: Duration(seconds: 4),
           ),
         );
     });
@@ -180,6 +181,13 @@ class _AssetDeskAppState extends State<AssetDeskApp>
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4A2574)),
         useMaterial3: true,
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          elevation: 6,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+        ),
       ),
       builder: (context, child) {
         return Listener(
@@ -241,7 +249,7 @@ class _SessionGateState extends State<SessionGate> {
               content: Text(
                   'Tu sesión se cerró por 15 minutos de inactividad. Inicia sesión de nuevo.'),
               backgroundColor: Color(0xFF4A2574),
-              duration: Duration(seconds: 8),
+              duration: Duration(seconds: 4),
             ),
           );
       });
