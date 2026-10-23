@@ -26,6 +26,54 @@ List<Map<String, dynamic>> _filasTipadas(List<dynamic> filas) {
       .toList(growable: false);
 }
 
+bool _requiereAprobacionEn(InventoryModel? inv) {
+  final u = AuthService.usuarioCache;
+  if (u == null || !u.esResidente) return false;
+  if (inv == null) return true;
+  return !inv.esResponsable(u.correo);
+}
+
+class _AvisoAprobacion extends StatelessWidget {
+  final String responsable;
+  final EdgeInsetsGeometry margen;
+
+  const _AvisoAprobacion({
+    required this.responsable,
+    this.margen = const EdgeInsets.only(top: 16),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: margen,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.hourglass_top_rounded,
+              color: Color(0xFFB45309), size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              responsable.isEmpty
+                  ? 'Este cambio no se aplicará de inmediato: se enviará al responsable del inventario para su aprobación.'
+                  : 'Este cambio no se aplicará de inmediato: se enviará a $responsable para su aprobación.',
+              style: const TextStyle(
+                  fontSize: 12.5, color: Color(0xFF92400E), height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 double? _anchoAviso(BuildContext context) =>
     MediaQuery.sizeOf(context).width > 640 ? 420 : null;
 
@@ -2397,6 +2445,9 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
 
   late final List<_DetailSection> _secciones = _seccionesConDatos();
 
+  bool get _requiereAprobacion => _requiereAprobacionEn(widget.inventario);
+  String get _responsableTexto => widget.inventario?.responsableEmail ?? '';
+
   static final RegExp _espacios = RegExp(r'\s+');
   static const Map<String, String> _acentos = {
     'á': 'a',
@@ -2481,6 +2532,8 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
         titulo: _titulo(),
         nombreSeccionBajas: _mapaNombreBajas[widget.nombrePestana] ?? 'Bajas',
         esConsumible: esConsumible,
+        requiereAprobacion: _requiereAprobacion,
+        responsable: _responsableTexto,
         onConfirmar: (motivo) {
           final sn = _valor(_config.snKey);
           return AuthService.darDeBaja(
@@ -2627,6 +2680,8 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
         inventarioActual: widget.inventario?.nombre ?? 'Inventario actual',
         pestana: widget.nombrePestana,
         destinos: _destinosTransferencia,
+        requiereAprobacion: _requiereAprobacion,
+        responsable: _responsableTexto,
         onConfirmar: (dest, motivo) => AuthService.transferirActivo(
           spreadsheetId: widget.spreadsheetId,
           pestana: widget.nombrePestana,
@@ -2674,6 +2729,11 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                 children: [
                   const Text('Actualiza el departamento al que se asignará este consumible:',
                       style: TextStyle(fontSize: 13, color: Colors.black54)),
+                  if (_requiereAprobacion)
+                    _AvisoAprobacion(
+                      responsable: _responsableTexto,
+                      margen: const EdgeInsets.only(top: 14),
+                    ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: deptoController,
@@ -2891,15 +2951,17 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: const Color(0xFFFECACA)),
                         ),
-                        child: const Row(
+                        child: Row(
                           children: [
-                            Icon(Icons.remove_circle_outline,
+                            const Icon(Icons.remove_circle_outline,
                                 size: 18, color: Color(0xFFB91C1C)),
-                            SizedBox(width: 8),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Este elemento está dado de baja. Puedes revertir la baja para regresarlo al inventario.',
-                                style: TextStyle(
+                                _requiereAprobacion
+                                    ? 'Este elemento está dado de baja. Solo el responsable del inventario puede revertir la baja.'
+                                    : 'Este elemento está dado de baja. Puedes revertir la baja para regresarlo al inventario.',
+                                style: const TextStyle(
                                     fontSize: 12.5,
                                     color: Color(0xFF7F1D1D),
                                     height: 1.35),
@@ -3187,7 +3249,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
 
     if (widget.esBaja) {
       if (!esConsumible) acciones.add(_botonQr());
-      if (widget.puedeEditar) {
+      if (widget.puedeEditar && !_requiereAprobacion) {
         acciones.add(
           ElevatedButton.icon(
             onPressed: _revirtiendo ? null : _revertirBaja,
@@ -3301,6 +3363,8 @@ class _ConfirmarBajaDialog extends StatefulWidget {
   final String titulo;
   final String nombreSeccionBajas;
   final bool esConsumible;
+  final bool requiereAprobacion;
+  final String responsable;
   final Future<bool> Function(String motivo) onConfirmar;
 
   const _ConfirmarBajaDialog({
@@ -3308,6 +3372,8 @@ class _ConfirmarBajaDialog extends StatefulWidget {
     required this.nombreSeccionBajas,
     required this.esConsumible,
     required this.onConfirmar,
+    this.requiereAprobacion = false,
+    this.responsable = '',
   });
 
   @override
@@ -3438,6 +3504,11 @@ class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
                     ],
                   ),
                 ),
+                if (widget.requiereAprobacion)
+                  _AvisoAprobacion(
+                    responsable: widget.responsable,
+                    margen: const EdgeInsets.only(top: 14),
+                  ),
                 const SizedBox(height: 18),
                 const Align(
                   alignment: Alignment.centerLeft,
@@ -3731,6 +3802,8 @@ class _TransferirDialog extends StatefulWidget {
   final String pestana;
   final List<InventoryModel> destinos;
   final Future<bool> Function(InventoryModel destino, String motivo) onConfirmar;
+  final bool requiereAprobacion;
+  final String responsable;
 
   const _TransferirDialog({
     required this.titulo,
@@ -3738,6 +3811,8 @@ class _TransferirDialog extends StatefulWidget {
     required this.pestana,
     required this.destinos,
     required this.onConfirmar,
+    this.requiereAprobacion = false,
+    this.responsable = '',
   });
 
   @override
@@ -3837,6 +3912,11 @@ class _TransferirDialogState extends State<_TransferirDialog> {
                     ],
                   ),
                 ),
+                if (widget.requiereAprobacion)
+                  _AvisoAprobacion(
+                    responsable: widget.responsable,
+                    margen: const EdgeInsets.only(top: 14),
+                  ),
                 const SizedBox(height: 18),
                 const Align(
                   alignment: Alignment.centerLeft,
