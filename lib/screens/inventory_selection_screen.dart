@@ -77,7 +77,8 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => CambiarPasswordDialog(correo: u.correo),
+      builder: (_) => _Compacto(
+          ancho: 380, child: CambiarPasswordDialog(correo: u.correo)),
     );
     if (ok == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -294,8 +295,11 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
                       PopupMenuButton<String>(
                         offset: const Offset(0, 45),
                         padding: EdgeInsets.zero,
+                        elevation: 8,
+                        shadowColor: Colors.black38,
+                        surfaceTintColor: Colors.transparent,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(18),
                         ),
                         color: const Color(0xFFF3EDF7),
                         icon: _avatar(),
@@ -747,14 +751,15 @@ class _SolicitudesPendientesScreenState
     if (!aprobar) {
       final resultado = await showDialog<String>(
         context: context,
-        builder: (_) => const _ComentarioRechazoDialog(),
+        builder: (_) => const _Compacto(
+            ancho: 420, child: _ComentarioRechazoDialog()),
       );
       if (resultado == null) return;
       comentario = resultado;
     } else {
       final confirmar = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
+        builder: (ctx) => _Compacto(ancho: 420, child: AlertDialog(
           backgroundColor: Colors.white,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -777,7 +782,7 @@ class _SolicitudesPendientesScreenState
                       color: Color(0xFF16A34A), fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
+        ),),
       );
       if (confirmar != true) return;
     }
@@ -1451,7 +1456,8 @@ class _ComentarioRechazoDialogState extends State<_ComentarioRechazoDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text('Rechazar solicitud',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-      content: Column(
+      content: SingleChildScrollView(
+          child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
@@ -1477,7 +1483,7 @@ class _ComentarioRechazoDialogState extends State<_ComentarioRechazoDialog> {
             ),
           ),
         ],
-      ),
+      )),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
@@ -1672,6 +1678,23 @@ class _CambiarPasswordDialogState extends State<CambiarPasswordDialog> {
                       color: Colors.white, fontWeight: FontWeight.bold)),
         ),
       ],
+    );
+  }
+}
+
+
+class _Compacto extends StatelessWidget {
+  final double ancho;
+  final Widget child;
+  const _Compacto({required this.ancho, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: ancho + 48),
+        child: child,
+      ),
     );
   }
 }

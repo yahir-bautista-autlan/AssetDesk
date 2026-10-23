@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:universal_html/html.dart' as html;
 
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});
@@ -11,7 +12,7 @@ class QrScannerScreen extends StatefulWidget {
 
 class _QrScannerScreenState extends State<QrScannerScreen> {
   static const primaryPurple = Color(0xFF532E7C);
-  
+
   final MobileScannerController controller = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
     facing: CameraFacing.back,
@@ -24,24 +25,204 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
 
   @override
   void dispose() {
+    _apagarCamaraWeb();
     controller.dispose();
     _manualController.dispose();
     super.dispose();
   }
 
+  bool _cerrando = false;
+
+  void _apagarCamaraWeb() {
+    if (!kIsWeb) return;
+    try {
+      for (final el in html.document.querySelectorAll('video')) {
+        final dynamic video = el;
+        final dynamic flujo = video.srcObject;
+        if (flujo != null) {
+          for (final pista in (flujo.getTracks() as List)) {
+            (pista as dynamic).stop();
+          }
+        }
+        video.pause();
+        video.srcObject = null;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _cerrar([String? valor]) async {
+    if (_cerrando) return;
+    _cerrando = true;
+    if (mounted) setState(() => _isProcessing = true);
+    _apagarCamaraWeb();
+    try {
+      await controller.stop().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    _apagarCamaraWeb();
+    if (!mounted) return;
+    Navigator.pop(context, valor);
+  }
+
   void _onDetect(BarcodeCapture capture) {
     if (_isProcessing) return;
-    
+
     final List<Barcode> barcodes = capture.barcodes;
     if (barcodes.isNotEmpty && barcodes.first.rawValue != null) {
-      setState(() => _isProcessing = true);
-      final String serialNumber = barcodes.first.rawValue!;
-      Navigator.pop(context, serialNumber);
+      _cerrar(barcodes.first.rawValue!);
     }
+  }
+
+  void _buscarManual() {
+    final texto = _manualController.text.trim();
+    if (texto.isEmpty || _isProcessing) return;
+    _cerrar(texto);
+  }
+
+  Widget _errorCamara(BuildContext context, MobileScannerException error) {
+    return Container(
+      color: const Color(0xFF1E1B2E),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(24),
+      child: const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.videocam_off_outlined, size: 48, color: Colors.white70),
+          SizedBox(height: 12),
+          Text(
+            'No se pudo acceder a la cámara.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 6),
+          Text(
+            kIsWeb
+                ? 'Permite el acceso a la cámara en tu navegador o ingresa el Número de Serie manualmente.'
+                : 'Revisa los permisos de la cámara en tu dispositivo.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _visorCamara() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        color: const Color(0xFF1E1B2E),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: MobileScanner(
+                controller: controller,
+                onDetect: _onDetect,
+                errorBuilder: _errorCamara,
+              ),
+            ),
+            Center(
+              child: Container(
+                height: 1,
+                width: 250,
+                decoration: BoxDecoration(
+                  boxShadow: [
+                    BoxShadow(
+                      color: primaryPurple.withOpacity(0.8),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    )
+                  ],
+                  color: primaryPurple,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _entradaManual() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '¿No funciona la cámara? Ingresa el Número de Serie (SN):',
+                style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _manualController,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _buscarManual(),
+                      decoration: InputDecoration(
+                        hintText: 'Ej. 9RGHKN3',
+                        filled: true,
+                        fillColor: const Color(0xFFF9FAFB),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              const BorderSide(color: primaryPurple, width: 1.6),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryPurple,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 22, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: _buscarManual,
+                    child: const Text('Buscar',
+                        style: TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _cerrar();
+      },
+      child: _contenido(),
+    );
+  }
+
+  Widget _contenido() {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -57,7 +238,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
                       shape: BoxShape.circle,
                     ),
                     child: IconButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () => _cerrar(),
                       icon: const Icon(Icons.arrow_back, color: primaryPurple),
                     ),
                   ),
@@ -81,95 +262,20 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
                 color: Color(0xFF6B7280),
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
             Expanded(
               child: kIsWeb
                   ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.laptop_mac, size: 64, color: primaryPurple),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'El escaneo de cámara no está disponible en navegadores web.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Ingresa el Número de Serie (SN) manualmente para buscar el activo:',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
-                            ),
-                            const SizedBox(height: 20),
-                            TextField(
-                              controller: _manualController,
-                              decoration: InputDecoration(
-                                hintText: 'Ej. 9RGHKN3',
-                                filled: true,
-                                fillColor: const Color(0xFFF9FAFB),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: primaryPurple,
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: () {
-                                  if (_manualController.text.trim().isNotEmpty) {
-                                    Navigator.pop(context, _manualController.text.trim());
-                                  }
-                                },
-                                child: const Text('Buscar Activo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                              ),
-                            ),
-                          ],
-                        ),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 688),
+                        child: _visorCamara(),
                       ),
                     )
-                  : Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 24),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        color: const Color(0xFF1E1B2E),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: Stack(
-                          children: [
-                            MobileScanner(
-                              controller: controller,
-                              onDetect: _onDetect,
-                            ),
-                            Center(
-                              child: Container(
-                                height: 1,
-                                width: 250,
-                                decoration: BoxDecoration(
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: primaryPurple.withOpacity(0.8),
-                                      blurRadius: 8,
-                                      spreadRadius: 2,
-                                    )
-                                  ],
-                                  color: primaryPurple,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  : _visorCamara(),
             ),
-            if (!kIsWeb) ...[
+            if (kIsWeb)
+              _entradaManual()
+            else ...[
               const SizedBox(height: 24),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),

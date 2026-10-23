@@ -18,6 +18,14 @@ import 'qr_scanner_screen.dart';
 import 'qr_view_screen.dart';
 import 'responsiva_preview_screen.dart';
 
+List<Map<String, dynamic>> _filasTipadas(List<dynamic> filas) {
+  return filas
+      .map((r) => r is Map<String, dynamic>
+          ? r
+          : Map<String, dynamic>.from(r as Map))
+      .toList(growable: false);
+}
+
 double? _anchoAviso(BuildContext context) =>
     MediaQuery.sizeOf(context).width > 640 ? 420 : null;
 
@@ -85,6 +93,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     mainAxisMargin: 2,
   );
 
+  static const EdgeInsets _paddingCelda = EdgeInsets.symmetric(horizontal: 12);
+
   static const BoxDecoration _bordeFila = BoxDecoration(
     border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1)),
   );
@@ -118,8 +128,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
   bool _eventoPropioRecibido = false;
   Future<void>? _cargaTotal;
   final Set<String> _pestanasEnCarga = {};
-  String _memoKey = '';
-  (List<String>, List<dynamic>)? _memoResultado;
+  final Map<String, (List<String>, List<dynamic>)> _memos = {};
   final Map<String, List<String>> _indiceBusqueda = {};
 
   late final Listenable _headerListenable =
@@ -486,8 +495,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
   void _datosCambiaron() {
     _datosVersion++;
-    _memoKey = '';
-    _memoResultado = null;
+    _memos.clear();
     _indiceBusqueda.clear();
   }
 
@@ -778,8 +786,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
     final memoKey =
         '$_datosVersion|$index|$filtro|$query|${identityHashCode(_columnasPorPestana.value)}';
-    final memo = _memoResultado;
-    if (memo != null && memoKey == _memoKey) return memo;
+    final memo = _memos[memoKey];
+    if (memo != null) return memo;
 
     final pestanaData = _datosHojas[dataKey] ?? {'headers': [], 'rows': []};
 
@@ -797,20 +805,34 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
                 : '')
             .toList());
 
+    String? claveEstatus;
+    for (final h in allHeaders) {
+      if (h.toLowerCase().trim() == 'estatus') {
+        claveEstatus = h;
+        break;
+      }
+    }
+    final filtraEstatus = filtro == 'Asignados' || filtro == 'Disponibles';
+    final esConsumibles = nombrePestana == 'Consumibles';
+
     final filteredRows = <dynamic>[];
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i];
       if (row is! Map) continue;
 
-      if (filtro == 'Asignados' || filtro == 'Disponibles') {
+      if (filtraEstatus) {
         String estatusValor = '';
-        row.forEach((k, v) {
-          if (k.toString().toLowerCase().trim() == 'estatus') {
-            estatusValor = v.toString().toLowerCase().trim();
-          }
-        });
+        if (claveEstatus != null) {
+          estatusValor = (row[claveEstatus]?.toString() ?? '').toLowerCase().trim();
+        } else {
+          row.forEach((k, v) {
+            if (k.toString().toLowerCase().trim() == 'estatus') {
+              estatusValor = v.toString().toLowerCase().trim();
+            }
+          });
+        }
 
-        if (nombrePestana == 'Consumibles') {
+        if (esConsumibles) {
           if (filtro == 'Asignados' && estatusValor != 'asignado') continue;
           if (filtro == 'Disponibles' && estatusValor != 'stock') continue;
         } else {
@@ -825,8 +847,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     }
 
     final resultado = (headers, filteredRows);
-    _memoKey = memoKey;
-    _memoResultado = resultado;
+    if (_memos.length >= 8) _memos.remove(_memos.keys.first);
+    _memos[memoKey] = resultado;
     return resultado;
   }
 
@@ -996,7 +1018,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
   void _onSearchChanged(String val) {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 200), () {
+    _debounce = Timer(const Duration(milliseconds: 160), () {
       _searchQuery.value = val;
     });
   }
@@ -1241,9 +1263,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     final snFila = _snDeFila(fila, nombrePestana);
     final mainData = _datosHojas[nombrePestana] ?? {'headers': [], 'rows': []};
     final mainHeaders = List<String>.from(mainData['headers'] ?? []);
-    final mainRows = List<dynamic>.from(mainData['rows'] ?? [])
-        .map((r) => Map<String, dynamic>.from(r as Map))
-        .toList();
+    final mainRows = (mainData['rows'] as List<dynamic>?) ?? const <dynamic>[];
 
     showModalBottomSheet(
       context: context,
@@ -1285,9 +1305,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
         builder: (_) => AddAssetScreen(
           nombrePestana: nombrePestana,
           headers: headers,
-          existingRows: rows
-              .map((r) => Map<String, dynamic>.from(r as Map))
-              .toList(),
+          existingRows: _filasTipadas(rows),
           inventario: _inventarioActivo,
         ),
       ),
@@ -1573,8 +1591,11 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
                 offset: const Offset(0, 40),
                 padding: EdgeInsets.zero,
                 color: const Color(0xFFF3EDF7),
+                elevation: 8,
+                shadowColor: Colors.black38,
+                surfaceTintColor: Colors.transparent,
                 shape:
-                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 icon: _avatar(),
                 onOpened: () {
                   if (_user == null) _cargarUsuario();
@@ -1685,7 +1706,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
               final mainData = _datosHojas[nombrePestana] ?? {'headers': [], 'rows': []};
               final mainHeaders = List<String>.from(mainData['headers'] ?? []);
-              final mainRows = List<dynamic>.from(mainData['rows'] ?? []);
+              final mainRows = (mainData['rows'] as List<dynamic>?) ?? const <dynamic>[];
 
               return SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -2027,14 +2048,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
                                         return SizedBox(
                                           width: _colWidth,
                                           child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 12),
-                                            child: Align(
-                                              alignment: Alignment.centerLeft,
-                                              child:
-                                                  _buildCellContent(h, valor,
-                                                      esEstatus[c]),
-                                            ),
+                                            padding: _paddingCelda,
+                                            child: _buildCellContent(
+                                                h, valor, esEstatus[c]),
                                           ),
                                         );
                                       }, growable: false),
@@ -2330,7 +2346,7 @@ class _DeviceDetailSheet extends StatefulWidget {
   final String nombrePestana;
   final String spreadsheetId;
   final List<String> headers;
-  final List<Map<String, dynamic>> existingRows;
+  final List<dynamic> existingRows;
   final InventoryModel? inventario;
   final bool puedeEditar;
   final bool esBaja;
@@ -2379,11 +2395,24 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     for (final k in widget.fila.keys) _normalizarClave(k): k,
   };
 
+  late final List<_DetailSection> _secciones = _seccionesConDatos();
+
+  static final RegExp _espacios = RegExp(r'\s+');
+  static const Map<String, String> _acentos = {
+    'á': 'a',
+    'é': 'e',
+    'í': 'i',
+    'ó': 'o',
+    'ú': 'u',
+    'ü': 'u',
+  };
+
   static String _normalizarClave(String k) {
     var n = k.toLowerCase().trim();
-    const acentos = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u'};
-    acentos.forEach((a, b) => n = n.replaceAll(a, b));
-    n = n.replaceAll(RegExp(r'\s+'), ' ');
+    _acentos.forEach((a, b) {
+      if (n.contains(a)) n = n.replaceAll(a, b);
+    });
+    n = n.replaceAll(_espacios, ' ');
     return n == 'unidad' ? 'ubicacion' : n;
   }
 
@@ -2562,7 +2591,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
         builder: (_) => AddAssetScreen(
           nombrePestana: widget.nombrePestana,
           headers: widget.headers,
-          existingRows: widget.existingRows,
+          existingRows: _filasTipadas(widget.existingRows),
           inventario: widget.inventario,
           existingData: widget.fila,
         ),
@@ -2755,7 +2784,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final secciones = _seccionesConDatos();
+    final secciones = _secciones;
     final activo = _esActivo();
     final esConsumible = widget.nombrePestana == 'Consumibles';
     final acciones = _buildAcciones(esConsumible);
@@ -3036,20 +3065,21 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                                         ),
                                       ),
                                     ),
-                                    AnimatedCrossFade(
+                                    AnimatedSize(
                                       duration:
                                           const Duration(milliseconds: 200),
-                                      crossFadeState: expandida
-                                          ? CrossFadeState.showFirst
-                                          : CrossFadeState.showSecond,
-                                      firstChild: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                            16, 0, 16, 16),
-                                        child:
-                                            _buildCamposGrid(seccion.campos),
-                                      ),
-                                      secondChild: const SizedBox(
-                                          width: double.infinity),
+                                      curve: Curves.easeOutCubic,
+                                      alignment: Alignment.topCenter,
+                                      child: expandida
+                                          ? Padding(
+                                              padding:
+                                                  const EdgeInsets.fromLTRB(
+                                                      16, 0, 16, 16),
+                                              child: _buildCamposGrid(
+                                                  seccion.campos),
+                                            )
+                                          : const SizedBox(
+                                              width: double.infinity),
                                     ),
                                   ],
                                 ),
@@ -3423,6 +3453,13 @@ class _ConfirmarBajaDialogState extends State<_ConfirmarBajaDialog> {
                 DropdownButtonFormField<String>(
                   initialValue: _motivoSeleccionado,
                   isExpanded: true,
+                  borderRadius: BorderRadius.circular(16),
+                  dropdownColor: Colors.white,
+                  elevation: 8,
+                  menuMaxHeight: 300,
+                  focusColor: Colors.transparent,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  iconEnabledColor: const Color(0xFF6B7280),
                   items: _motivos
                       .map((m) => DropdownMenuItem(
                             value: m,
@@ -3815,6 +3852,13 @@ class _TransferirDialogState extends State<_TransferirDialog> {
                 DropdownButtonFormField<InventoryModel>(
                   initialValue: _destino,
                   isExpanded: true,
+                  borderRadius: BorderRadius.circular(16),
+                  dropdownColor: Colors.white,
+                  elevation: 8,
+                  menuMaxHeight: 300,
+                  focusColor: Colors.transparent,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  iconEnabledColor: const Color(0xFF6B7280),
                   hint: const Text('Seleccionar inventario...',
                       style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
                   items: widget.destinos

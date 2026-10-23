@@ -29,6 +29,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   ];
 
   int _tab = 0;
+  final Set<int> _visitadas = {0};
   bool _cargando = true;
   bool _guardando = false;
   bool _modoEdicion = false;
@@ -153,6 +154,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
         ..clear()
         ..addAll(_separar(u['inventarios']));
       _tab = 1;
+      _visitadas.add(1);
     });
   }
 
@@ -389,13 +391,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     return _inventarioPorId(idInventario);
   }
 
-  Future<void> _crearInventarioDesdeFormulario() async {
-    final nuevo = await _dialogoInventario();
-    if (nuevo != null && mounted) {
-      setState(() => _seleccionados.add(nuevo.id));
-    }
-  }
-
   Future<void> _eliminarInventario(InventoryModel inv) async {
     final ok = await _confirmar(
       'Eliminar inventario',
@@ -557,6 +552,112 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     );
   }
 
+  void _mostrarOpcionesInventario(InventoryModel inv) {
+    showModalBottomSheet(
+      context: context,
+      constraints: const BoxConstraints(maxWidth: 520),
+      backgroundColor: const Color(0xFFF2F2F7),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D1D6),
+                      borderRadius: BorderRadius.circular(2.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Gestión de Inventario',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Selecciona una acción para ${inv.nombre}',
+                  style: const TextStyle(color: Color(0xFF3C3C43), fontSize: 16),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      _opcionIos(
+                        icono: Icons.edit_outlined,
+                        color: const Color(0xFF007AFF),
+                        texto: 'Editar información',
+                        onTap: () {
+                          Navigator.pop(sheetCtx);
+                          _dialogoInventario(inicial: inv);
+                        },
+                      ),
+                      const Divider(
+                          height: 1,
+                          thickness: 1,
+                          indent: 48,
+                          color: Color(0xFFE5E5EA)),
+                      _opcionIos(
+                        icono: Icons.delete_outline_rounded,
+                        color: const Color(0xFFFF3B30),
+                        texto: 'Eliminar inventario',
+                        onTap: () {
+                          Navigator.pop(sheetCtx);
+                          _eliminarInventario(inv);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: () => Navigator.pop(sheetCtx),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Cancelar',
+                        style: TextStyle(
+                          fontSize: 17,
+                          color: Colors.black,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _opcionIos({
     required IconData icono,
     required Color color,
@@ -595,6 +696,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
 
     return Scaffold(
       backgroundColor: backgroundColor,
+      bottomNavigationBar: RepaintBoundary(child: _barraNavegacion()),
       body: SafeArea(
         child: Align(
           alignment: Alignment.topCenter,
@@ -628,8 +730,11 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                       ),
                       PopupMenuButton<String>(
                         offset: const Offset(0, 48),
+                        elevation: 8,
+                        shadowColor: Colors.black38,
+                        surfaceTintColor: Colors.transparent,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(18),
                         ),
                         icon: Container(
                           width: 40,
@@ -669,43 +774,43 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE9EDF2),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        _tabBoton('Usuarios (${_usuarios.length})', 0, () {
-                          setState(() {
-                            _tab = 0;
-                            _limpiarFormulario();
-                          });
-                        }),
-                        _tabBoton(_modoEdicion ? 'Editar' : 'Invitar', 1, () {
-                          setState(() {
-                            if (_tab == 0) _limpiarFormulario();
-                            _tab = 1;
-                          });
-                        }),
-                        _tabBoton('Inventarios (${_catalogo.length})', 2, () {
-                          setState(() {
-                            _tab = 2;
-                            _limpiarFormulario();
-                          });
-                        }),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 4),
                 Expanded(
-                  child: _tab == 0
-                      ? _vistaUsuarios()
-                      : (_tab == 1 ? _vistaFormulario() : _vistaInventarios()),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: IndexedStack(
+                          index: _tab,
+                          children: [
+                            RepaintBoundary(child: _vistaUsuarios()),
+                            _visitadas.contains(1)
+                                ? RepaintBoundary(child: _vistaFormulario())
+                                : const SizedBox.shrink(),
+                            _visitadas.contains(2)
+                                ? RepaintBoundary(child: _vistaInventarios())
+                                : const SizedBox.shrink(),
+                          ],
+                        ),
+                      ),
+                      if (_tab == 2)
+                        Positioned(
+                          right: 24,
+                          bottom: 16,
+                          child: FloatingActionButton.extended(
+                            heroTag: 'nuevo_inventario',
+                            onPressed:
+                                _cargando ? null : () => _dialogoInventario(),
+                            backgroundColor: primaryPurple,
+                            foregroundColor: Colors.white,
+                            elevation: 3,
+                            icon: const Icon(Icons.add_rounded, size: 22),
+                            label: const Text('Nuevo inventario',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 14)),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -715,31 +820,126 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     );
   }
 
-  Widget _tabBoton(String label, int index, VoidCallback onTap) {
-    final seleccionado = _tab == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: seleccionado ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(11),
-            boxShadow: seleccionado
-                ? [
+  void _irATab(int index) {
+    if (_tab == index) return;
+    setState(() {
+      if (index == 1) {
+        if (_tab == 0) _limpiarFormulario();
+      } else {
+        _limpiarFormulario();
+      }
+      _tab = index;
+      _visitadas.add(index);
+    });
+  }
+
+  Widget _barraNavegacion() {
+    final items = [
+      (Icons.group_outlined, 'Usuarios (${_usuarios.length})'),
+      (
+        _modoEdicion ? Icons.edit_outlined : Icons.person_add_alt_1_outlined,
+        _modoEdicion ? 'Editar' : 'Invitar'
+      ),
+      (Icons.warehouse_outlined, 'Inventarios (${_catalogo.length})'),
+    ];
+
+    final amplio = MediaQuery.sizeOf(context).width >= 700;
+    final altoBarra = amplio ? 56.0 : 48.0;
+    final tamIcono = amplio ? 21.0 : 18.0;
+    final tamTexto = amplio ? 11.5 : 10.0;
+
+    return SafeArea(
+      child: Center(
+        heightFactor: 1,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+            child: RepaintBoundary(
+              child: Container(
+                height: altoBarra,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFCFBFE),
+                  borderRadius: BorderRadius.circular(29),
+                  border: Border.all(color: const Color(0xFFEDE7F6)),
+                  boxShadow: const [
                     BoxShadow(
-                        color: Colors.black.withOpacity(0.05), blurRadius: 4)
-                  ]
-                : [],
-          ),
-          child: Center(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: seleccionado ? primaryPurple : const Color(0xFF6B7280),
+                      color: Color(0x1A000000),
+                      blurRadius: 12,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final itemWidth = constraints.maxWidth / items.length;
+                    return Stack(
+                      children: [
+                        AnimatedPositioned(
+                          duration: const Duration(milliseconds: 260),
+                          curve: Curves.easeOutCubic,
+                          left: itemWidth * _tab + 6,
+                          top: 6,
+                          bottom: 6,
+                          width: itemWidth - 12,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: lightPurpleBg,
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                        ),
+                        Row(
+                          children: List.generate(items.length, (i) {
+                            final selected = _tab == i;
+                            final (icon, label) = items[i];
+                            return SizedBox(
+                              width: itemWidth,
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _irATab(i),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        icon,
+                                        color: selected
+                                            ? primaryPurple
+                                            : Colors.grey.shade600,
+                                        size: tamIcono,
+                                      ),
+                                      const SizedBox(height: 1),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 4),
+                                        child: Text(
+                                          label,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: selected
+                                                ? primaryPurple
+                                                : Colors.grey.shade600,
+                                            fontWeight: selected
+                                                ? FontWeight.bold
+                                                : FontWeight.w500,
+                                            fontSize: tamTexto,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -1048,6 +1248,13 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                     key: ValueKey('inv_${_seleccionados.length}_${_catalogo.length}'),
                     initialValue: null,
                     isExpanded: true,
+                    borderRadius: BorderRadius.circular(16),
+                    dropdownColor: Colors.white,
+                    elevation: 8,
+                    menuMaxHeight: 300,
+                    focusColor: Colors.transparent,
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    iconEnabledColor: const Color(0xFF6B7280),
                     hint: const Text('Seleccionar inventario...',
                         style: TextStyle(color: Colors.black38, fontSize: 14)),
                     items: opciones
@@ -1112,46 +1319,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                         ),
                       );
                     }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFECFDF3),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFBBF7D0)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.add_circle,
-                            color: Color(0xFF16A34A), size: 22),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            '¿Necesitas un inventario que aún no existe?',
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF166534)),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: _guardando || _cargando
-                              ? null
-                              : _crearInventarioDesdeFormulario,
-                          child: const Text(
-                            'Toca aquí',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF16A34A),
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ],
                 const SizedBox(height: 24),
@@ -1246,27 +1413,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   Widget _vistaInventarios() {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _cargando ? null : () => _dialogoInventario(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryPurple,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              icon: const Icon(Icons.add, size: 20),
-              label: const Text('Nuevo inventario',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
         Expanded(
           child: _cargando
               ? const Center(
@@ -1280,8 +1426,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                       color: primaryPurple,
                       onRefresh: _cargar,
                       child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24.0, vertical: 8.0),
+                        padding: const EdgeInsets.fromLTRB(24, 8, 24, 96),
                         itemCount: _catalogo.length,
                         itemBuilder: (_, i) => _tarjetaInventario(_catalogo[i]),
                       ),
@@ -1296,12 +1441,18 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
         .where((u) => _separar(u['inventarios']).contains(inv.id))
         .length;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Material(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => _mostrarOpcionesInventario(inv),
+          child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE5E7EB)),
         boxShadow: [
           BoxShadow(
@@ -1311,19 +1462,24 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
         ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: lightPurpleBg,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.warehouse_rounded,
-                color: primaryPurple, size: 24),
+          SizedBox(
+            width: 128,
+            height: 72,
+            child: inv.logoId.isEmpty
+                ? const Icon(Icons.warehouse_rounded,
+                    color: primaryPurple, size: 36)
+                : InventarioImagen(
+                    inventarioId: inv.id,
+                    tipo: 'logo',
+                    fileId: inv.logoId,
+                    fit: BoxFit.contain,
+                    fallback: const Icon(Icons.warehouse_rounded,
+                        color: primaryPurple, size: 36),
+                  ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 20),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1331,17 +1487,17 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                 Text(
                   inv.nombre,
                   style: const TextStyle(
-                      fontSize: 15,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF111827)),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
                   '${inv.id}${inv.ubicacion.isNotEmpty ? '  ·  ${inv.ubicacion}' : ''}',
                   style: const TextStyle(
-                      fontSize: 12, color: Color(0xFF6B7280)),
+                      fontSize: 13.5, color: Color(0xFF6B7280)),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Row(
                   children: [
                     const Icon(Icons.verified_user_outlined,
@@ -1354,7 +1510,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                             : inv.responsableEmail,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13.5,
                           color: inv.responsableEmail.isEmpty
                               ? const Color(0xFFDC2626)
                               : const Color(0xFF374151),
@@ -1367,46 +1523,16 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                 Text(
                   '$asignados ${asignados == 1 ? 'usuario' : 'usuarios'} con acceso',
                   style: const TextStyle(
-                      fontSize: 11, color: Color(0xFF9CA3AF)),
+                      fontSize: 12, color: Color(0xFF9CA3AF)),
                 ),
               ],
             ),
           ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.grey),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14)),
-            onSelected: (v) {
-              if (v == 'editar') _dialogoInventario(inicial: inv);
-              if (v == 'eliminar') _eliminarInventario(inv);
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem<String>(
-                value: 'editar',
-                child: Row(
-                  children: [
-                    Icon(Icons.edit_outlined,
-                        size: 20, color: Color(0xFF007AFF)),
-                    SizedBox(width: 12),
-                    Text('Editar'),
-                  ],
-                ),
-              ),
-              PopupMenuItem<String>(
-                value: 'eliminar',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_outline_rounded,
-                        size: 20, color: Color(0xFFFF3B30)),
-                    SizedBox(width: 12),
-                    Text('Eliminar',
-                        style: TextStyle(color: Color(0xFFFF3B30))),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          const Icon(Icons.more_vert, color: Colors.grey, size: 22),
         ],
+      ),
+          ),
+        ),
       ),
     );
   }
@@ -1479,6 +1605,13 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       key: ValueKey('rol_${_rolSeleccionado ?? 'x'}_$_modoEdicion'),
       initialValue: _rolSeleccionado,
       isExpanded: true,
+      borderRadius: BorderRadius.circular(16),
+      dropdownColor: Colors.white,
+      elevation: 8,
+      menuMaxHeight: 300,
+      focusColor: Colors.transparent,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+      iconEnabledColor: const Color(0xFF6B7280),
       hint: const Text('Seleccionar rol...',
           style: TextStyle(color: Colors.black26, fontSize: 14)),
       items: _roles
@@ -2023,6 +2156,13 @@ class _InventarioDialogState extends State<_InventarioDialog> {
               DropdownButtonFormField<String>(
                 initialValue: _responsable,
                 isExpanded: true,
+                borderRadius: BorderRadius.circular(16),
+                dropdownColor: Colors.white,
+                elevation: 8,
+                menuMaxHeight: 300,
+                focusColor: Colors.transparent,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                iconEnabledColor: const Color(0xFF6B7280),
                 items: _itemsResponsable(),
                 onChanged: (v) => setState(() => _responsable = v),
                 decoration: _decoracion('Responsable (aprueba cambios)'),

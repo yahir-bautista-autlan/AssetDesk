@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
 import 'qr_view_screen.dart';
@@ -157,6 +158,28 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   };
 
   static const Set<String> _camposTamano = {'Disco Duro', 'Memoria'};
+
+  static const Set<String> _camposFemeninos = {'Memoria'};
+
+  String _frase(String header, {required bool nuevo}) {
+    final femenino = _camposFemeninos.contains(header);
+    final articulo = femenino ? 'la' : 'el';
+    final adjetivo = nuevo ? (femenino ? ' nueva' : ' nuevo') : '';
+    return 'Escribe $articulo$adjetivo ${header.toLowerCase()}';
+  }
+
+  void _intentarGuardar() {
+    if (_guardando || _esConsultor) return;
+    _guardar();
+  }
+
+  bool _enterPermitido() {
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    if (ctx == null) return true;
+    final enBoton = ctx.findAncestorWidgetOfExactType<IconButton>() != null ||
+        ctx.findAncestorWidgetOfExactType<ButtonStyleButton>() != null;
+    return !enBoton;
+  }
 
   bool get _esEdicion => widget.existingData != null;
 
@@ -703,6 +726,20 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   Widget build(BuildContext context) {
     if (_esConsultor) return _vistaSoloLectura();
 
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.enter): () {
+          if (_enterPermitido()) _intentarGuardar();
+        },
+        const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+          if (_enterPermitido()) _intentarGuardar();
+        },
+      },
+      child: _scaffoldFormulario(),
+    );
+  }
+
+  Widget _scaffoldFormulario() {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -921,6 +958,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         TextFormField(
           controller: _controllers[header],
           autofocus: esPrimero,
+          textInputAction: TextInputAction.done,
+          onFieldSubmitted: (_) => _intentarGuardar(),
           keyboardType: _esCampoNumerico(header)
               ? TextInputType.number
               : TextInputType.text,
@@ -979,57 +1018,25 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   Widget _buildCampoSelect(String header) {
     final opciones = _opcionesPorCampo[header] ?? const <String>[];
-    final error = _erroresSelect[header];
-    final controlador = _otroControllers[header]!;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _label(header),
-        TextFormField(
-          controller: controlador,
-          style: const TextStyle(fontSize: 14, color: Colors.black87),
-          onChanged: (_) {
+        _CampoSelect(
+          key: ValueKey('select_$header'),
+          controlador: _otroControllers[header]!,
+          opciones: opciones,
+          error: _erroresSelect[header],
+          decoracion: _decoracionBase,
+          hintNuevo: _frase(header, nuevo: true),
+          hintVacio: _frase(header, nuevo: false),
+          onEnviar: _intentarGuardar,
+          onEditado: () {
             if (_erroresSelect.containsKey(header)) {
               setState(() => _erroresSelect.remove(header));
             }
           },
-          decoration: _decoracionBase(
-            hint: opciones.isEmpty
-                ? 'Escribe el valor'
-                : 'Escribe o elige una opción',
-            suffixIcon: opciones.isEmpty
-                ? null
-                : PopupMenuButton<String>(
-                    tooltip: 'Ver opciones',
-                    icon: const Icon(Icons.keyboard_arrow_down,
-                        color: Color(0xFF9CA3AF)),
-                    color: Colors.white,
-                    constraints: const BoxConstraints(maxHeight: 320),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    onSelected: (v) {
-                      setState(() {
-                        controlador.text = v;
-                        controlador.selection =
-                            TextSelection.collapsed(offset: v.length);
-                        _erroresSelect.remove(header);
-                      });
-                    },
-                    itemBuilder: (_) => [
-                      for (final o in opciones)
-                        PopupMenuItem<String>(
-                          value: o,
-                          child: Text(
-                            o,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 14, color: Colors.black87),
-                          ),
-                        ),
-                    ],
-                  ),
-          ).copyWith(errorText: error),
         ),
       ],
     );
@@ -1110,4 +1117,193 @@ class _SeccionCampos {
   final String titulo;
   final List<String> headers;
   const _SeccionCampos(this.titulo, this.headers);
+}
+
+class _CampoSelect extends StatefulWidget {
+  final TextEditingController controlador;
+  final List<String> opciones;
+  final String? error;
+  final InputDecoration Function({String? hint, Widget? suffixIcon}) decoracion;
+  final VoidCallback onEditado;
+  final VoidCallback onEnviar;
+  final String hintNuevo;
+  final String hintVacio;
+
+  const _CampoSelect({
+    super.key,
+    required this.controlador,
+    required this.opciones,
+    required this.error,
+    required this.decoracion,
+    required this.onEditado,
+    required this.onEnviar,
+    required this.hintNuevo,
+    required this.hintVacio,
+  });
+
+  @override
+  State<_CampoSelect> createState() => _CampoSelectState();
+}
+
+class _CampoSelectState extends State<_CampoSelect> {
+  static const String _otro = '__otro__';
+  static const Color _morado = Color(0xFF6750A4);
+
+  final FocusNode _foco = FocusNode();
+  late bool _escribiendo = widget.opciones.isEmpty;
+
+  @override
+  void dispose() {
+    _foco.dispose();
+    super.dispose();
+  }
+
+  void _alElegir(String v) {
+    if (v == _otro) {
+      setState(() => _escribiendo = true);
+      widget.controlador.clear();
+      widget.onEditado();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _foco.requestFocus();
+      });
+      return;
+    }
+    widget.controlador.value = TextEditingValue(
+      text: v,
+      selection: TextSelection.collapsed(offset: v.length),
+    );
+    if (_escribiendo) setState(() => _escribiendo = false);
+    widget.onEditado();
+  }
+
+  List<PopupMenuEntry<String>> _items(BuildContext context) {
+    final actual = widget.controlador.text.trim();
+    return [
+      for (final o in widget.opciones)
+        PopupMenuItem<String>(
+          value: o,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  o,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: o == actual ? _morado : Colors.black87,
+                    fontWeight:
+                        o == actual ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+              if (o == actual)
+                const Icon(Icons.check_rounded, size: 18, color: _morado),
+            ],
+          ),
+        ),
+      const PopupMenuDivider(height: 1),
+      const PopupMenuItem<String>(
+        value: _otro,
+        child: Row(
+          children: [
+            Icon(Icons.edit_outlined, size: 18, color: _morado),
+            SizedBox(width: 10),
+            Text(
+              'Otro…',
+              style: TextStyle(
+                  fontSize: 14, color: _morado, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  Widget _menu({required Widget child, required double ancho}) {
+    return PopupMenuButton<String>(
+      tooltip: '',
+      padding: EdgeInsets.zero,
+      position: PopupMenuPosition.under,
+      offset: const Offset(0, 6),
+      color: Colors.white,
+      elevation: 8,
+      shadowColor: Colors.black38,
+      surfaceTintColor: Colors.transparent,
+      constraints: BoxConstraints(
+        minWidth: ancho,
+        maxWidth: ancho,
+        maxHeight: 340,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      onSelected: _alElegir,
+      itemBuilder: _items,
+      child: child,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final error = widget.error;
+    final tieneOpciones = widget.opciones.isNotEmpty;
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        final ancho = c.maxWidth.isFinite ? c.maxWidth : 320.0;
+
+        if (_escribiendo || !tieneOpciones) {
+          return TextFormField(
+            controller: widget.controlador,
+            focusNode: _foco,
+            style: const TextStyle(fontSize: 14, color: Colors.black87),
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => widget.onEnviar(),
+            onChanged: (_) => widget.onEditado(),
+            decoration: widget
+                .decoracion(
+                  hint: tieneOpciones ? widget.hintNuevo : widget.hintVacio,
+                  suffixIcon: tieneOpciones
+                      ? _menu(
+                          ancho: ancho,
+                          child: const Icon(Icons.keyboard_arrow_down_rounded,
+                              color: Color(0xFF9CA3AF)),
+                        )
+                      : null,
+                )
+                .copyWith(errorText: error),
+          );
+        }
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: _menu(
+            ancho: ancho,
+            child: ListenableBuilder(
+              listenable: widget.controlador,
+              builder: (context, _) {
+                final texto = widget.controlador.text;
+                return InputDecorator(
+                  isEmpty: texto.isEmpty,
+                  decoration: widget
+                      .decoracion(
+                        hint: 'Elige una opción',
+                        suffixIcon: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: Color(0xFF9CA3AF)),
+                      )
+                      .copyWith(errorText: error),
+                  child: Text(
+                    texto,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        const TextStyle(fontSize: 14, color: Colors.black87),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
 }

@@ -10,6 +10,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:universal_html/html.dart' as html;
 
+
 class QrViewScreen extends StatefulWidget {
   final String serialNumber;
   final String nombreActivo;
@@ -51,11 +52,14 @@ class _QrViewScreenState extends State<QrViewScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => Dialog(
+      builder: (context) => _Compacto(
+        ancho: 380,
+        child: Dialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -109,6 +113,8 @@ class _QrViewScreenState extends State<QrViewScreen> {
               ),
             ],
           ),
+          ),
+        ),
         ),
       ),
     );
@@ -342,6 +348,23 @@ class _QrViewScreenState extends State<QrViewScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+class _Compacto extends StatelessWidget {
+  final double ancho;
+  final Widget child;
+  const _Compacto({required this.ancho, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: ancho + 48),
+        child: child,
       ),
     );
   }
