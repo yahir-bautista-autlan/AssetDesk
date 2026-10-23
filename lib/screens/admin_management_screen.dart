@@ -342,36 +342,35 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       idInventario = inicial.id;
     }
 
-    bool imagenesOk = true;
     final logoBytes = datos['logoBytes'] as Uint8List?;
     final portadaBytes = datos['portadaBytes'] as Uint8List?;
 
-    if (logoBytes != null) {
-      final ok = await AuthService.guardarImagenInventario(
-        idInventario: idInventario,
-        tipo: 'logo',
-        bytes: logoBytes,
-        mime: (datos['logoMime'] ?? 'image/png').toString(),
-      );
-      if (!ok) imagenesOk = false;
-    }
-    if (!mounted) return null;
-    if (portadaBytes != null) {
-      final ok = await AuthService.guardarImagenInventario(
-        idInventario: idInventario,
-        tipo: 'portada',
-        bytes: portadaBytes,
-        mime: (datos['portadaMime'] ?? 'image/jpeg').toString(),
-      );
-      if (!ok) imagenesOk = false;
-    }
+    final subidas = <Future<bool>>[
+      if (logoBytes != null)
+        AuthService.guardarImagenInventario(
+          idInventario: idInventario,
+          tipo: 'logo',
+          bytes: logoBytes,
+          mime: (datos['logoMime'] ?? 'image/png').toString(),
+        ),
+      if (portadaBytes != null)
+        AuthService.guardarImagenInventario(
+          idInventario: idInventario,
+          tipo: 'portada',
+          bytes: portadaBytes,
+          mime: (datos['portadaMime'] ?? 'image/jpeg').toString(),
+        ),
+    ];
+    final resultados = await Future.wait(subidas);
+    final imagenesOk = resultados.every((ok) => ok);
+    final errorImagen =
+        imagenesOk ? '' : _errorServidor('No se pudo guardar una imagen');
     if (!mounted) return null;
 
-    final errorImagen = imagenesOk ? '' : _errorServidor('No se pudo guardar una imagen');
-
-    await AuthService.refrescarInventariosUsuario();
-    if (!mounted) return null;
-    await _cargar();
+    await Future.wait([
+      AuthService.refrescarInventariosUsuario(),
+      _cargar(),
+    ]);
     if (!mounted) return null;
 
     if (!imagenesOk) {
