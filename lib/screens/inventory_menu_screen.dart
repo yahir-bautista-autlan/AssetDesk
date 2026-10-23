@@ -174,18 +174,18 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1130, maxHeight: 720),
+          constraints: const BoxConstraints(maxWidth: 820, maxHeight: 520),
           child: SizedBox.expand(
             child: FittedBox(
-              fit: BoxFit.contain,
+              fit: BoxFit.scaleDown,
               alignment: Alignment.center,
               child: SizedBox(
-            width: 900,
+            width: 760,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _encabezado(),
-                const SizedBox(height: 36),
+                const SizedBox(height: 30),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,7 +195,7 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
                       _Entrada(
                         retraso: 90 * i,
                         child: SizedBox(
-                          width: 178,
+                          width: 164,
                           child: _Mosaico(
                             opcion: _opciones[i],
                             onTap: () => _abrir(_opciones[i]),
@@ -263,16 +263,16 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
   }
 
   Widget _encabezado({bool compacto = false, double alto = 800}) {
-    final altoLogo = compacto ? (alto * 0.14).clamp(48.0, 92.0) : 132.0;
+    final altoLogo = compacto ? (alto * 0.14).clamp(48.0, 92.0) : 100.0;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          width: compacto ? altoLogo * 3.4 : 380,
+          width: compacto ? altoLogo * 3.4 : 300,
           height: altoLogo,
           child: _logo(),
         ),
-        SizedBox(height: compacto ? 8 : 18),
+        SizedBox(height: compacto ? 8 : 14),
         Text(
           'INVENTARIO GENERAL',
           textAlign: TextAlign.center,
@@ -292,7 +292,7 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
             maxLines: 1,
             softWrap: false,
             style: TextStyle(
-              fontSize: compacto ? 24 : 32,
+              fontSize: compacto ? 24 : 28,
               fontWeight: FontWeight.w300,
               letterSpacing: compacto ? 3 : 5,
               height: 1.15,
