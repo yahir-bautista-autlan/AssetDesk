@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/widgets.dart'
+    show AppLifecycleState, ValueNotifier, WidgetsBinding;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/inventory_model.dart';
@@ -27,6 +29,91 @@ class AuthService {
   static String ultimoMensaje = '';
   static bool ultimaRespuestaPendiente = false;
   static void Function(Map<String, dynamic> evento)? alEventoPropio;
+
+  static final ValueNotifier<int> solicitudesPendientes = ValueNotifier<int>(0);
+  static final StreamController<int> _nuevasSolicitudes =
+      StreamController<int>.broadcast();
+  static Stream<int> get nuevasSolicitudes => _nuevasSolicitudes.stream;
+
+  static const Duration _intervaloPulso = Duration(seconds: 4);
+  static Timer? _timerPulso;
+  static String _secPulso = '';
+  static bool _pulsando = false;
+  static bool _lineaBasePulso = false;
+  static int _fallosPulso = 0;
+  static int _saltarPulso = 0;
+
+  static bool get _recibeAvisosSolicitudes {
+    final u = _usuarioActual;
+    if (u == null) return false;
+    return u.esAdmin || u.inventarios.any((i) => i.esResponsable(u.correo));
+  }
+
+  static bool get _enPrimerPlano {
+    final e = WidgetsBinding.instance.lifecycleState;
+    return e == null ||
+        e == AppLifecycleState.resumed ||
+        e == AppLifecycleState.inactive;
+  }
+
+  static void iniciarPulsoSolicitudes() {
+    if (_timerPulso != null || !_recibeAvisosSolicitudes) return;
+    _timerPulso = Timer.periodic(_intervaloPulso, (_) => _pulsoSolicitudes());
+    _pulsoSolicitudes();
+  }
+
+  static void detenerPulsoSolicitudes() {
+    _timerPulso?.cancel();
+    _timerPulso = null;
+    _secPulso = '';
+    _pulsando = false;
+    _lineaBasePulso = false;
+    _fallosPulso = 0;
+    _saltarPulso = 0;
+    solicitudesPendientes.value = 0;
+  }
+
+  static Future<void> _pulsoSolicitudes() async {
+    if (_pulsando || !_enPrimerPlano) return;
+    if (_usuarioActual == null) {
+      detenerPulsoSolicitudes();
+      return;
+    }
+    if (_saltarPulso > 0) {
+      _saltarPulso--;
+      return;
+    }
+
+    _pulsando = true;
+    try {
+      final data = await _post({
+        'action': 'pulsoSolicitudes',
+        'actorEmail': _usuarioActual?.correo ?? '',
+        'desde': _secPulso,
+      }, sondeo: true);
+
+      if (_timerPulso == null) return;
+      if (data == null || data['status'] != 'success') {
+        _fallosPulso++;
+        _saltarPulso = _fallosPulso.clamp(1, 6);
+        return;
+      }
+
+      _fallosPulso = 0;
+      _secPulso = (data['seq'] ?? _secPulso).toString();
+
+      if (data['cambio'] == true) {
+        final total = (data['total'] as num?)?.toInt() ?? 0;
+        final previo = solicitudesPendientes.value;
+        _guardarCache('pend_count', total);
+        solicitudesPendientes.value = total;
+        if (_lineaBasePulso && total > previo) _nuevasSolicitudes.add(total);
+        _lineaBasePulso = true;
+      }
+    } finally {
+      _pulsando = false;
+    }
+  }
 
   static UserModel? _usuarioActual;
   static final Map<String, _CacheEntry> _cache = {};
@@ -186,6 +273,7 @@ class AuthService {
   }
 
   static Future<void> logout() async {
+    detenerPulsoSolicitudes();
     _usuarioActual = null;
     _invalidarCache();
     _imgCache.clear();

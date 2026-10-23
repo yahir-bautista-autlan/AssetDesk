@@ -77,10 +77,58 @@ class _AssetDeskAppState extends State<AssetDeskApp>
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_alTeclear);
     _vigilante = Timer.periodic(const Duration(seconds: 30), (_) => _revisar());
+    _avisosSolicitudes =
+        AuthService.nuevasSolicitudes.listen(_avisarNuevaSolicitud);
+  }
+
+  StreamSubscription<int>? _avisosSolicitudes;
+
+  void _avisarNuevaSolicitud(int total) {
+    final messenger = _messengerKey.currentState;
+    if (messenger == null || AuthService.usuarioCache == null) return;
+    final contexto = _navigatorKey.currentContext;
+    final ancho = contexto == null ? 0.0 : MediaQuery.sizeOf(contexto).width;
+
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          width: ancho > 640 ? 440 : null,
+          backgroundColor: const Color(0xFF532E7C),
+          duration: const Duration(seconds: 10),
+          content: Row(
+            children: [
+              const Icon(Icons.notifications_active_outlined,
+                  color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  total == 1
+                      ? 'Nueva solicitud de cambio pendiente'
+                      : 'Tienes $total solicitudes de cambio pendientes',
+                ),
+              ),
+            ],
+          ),
+          action: SnackBarAction(
+            label: 'Ver',
+            textColor: Colors.white,
+            onPressed: () {
+              _navigatorKey.currentState?.push(
+                MaterialPageRoute(
+                  builder: (_) => const SolicitudesPendientesScreen(),
+                ),
+              );
+            },
+          ),
+        ),
+      );
   }
 
   @override
   void dispose() {
+    _avisosSolicitudes?.cancel();
     _vigilante?.cancel();
     HardwareKeyboard.instance.removeHandler(_alTeclear);
     WidgetsBinding.instance.removeObserver(this);

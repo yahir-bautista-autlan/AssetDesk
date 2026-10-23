@@ -36,8 +36,21 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
   void initState() {
     super.initState();
     _inventarios = List<InventoryModel>.from(widget.inventariosVinculados);
+    AuthService.solicitudesPendientes.addListener(_alCambiarPendientes);
     _cargarUsuario();
     _refrescarInventarios();
+  }
+
+  @override
+  void dispose() {
+    AuthService.solicitudesPendientes.removeListener(_alCambiarPendientes);
+    super.dispose();
+  }
+
+  void _alCambiarPendientes() {
+    final total = AuthService.solicitudesPendientes.value;
+    if (!mounted || total == _pendientes) return;
+    setState(() => _pendientes = total);
   }
 
   Future<void> _refrescarInventarios() async {
@@ -48,13 +61,17 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
       _user = u;
       _inventarios = List<InventoryModel>.from(u.inventarios);
     });
+    AuthService.iniciarPulsoSolicitudes();
   }
 
   Future<void> _cargarUsuario() async {
     final u = await AuthService.obtenerUsuarioActual();
     if (!mounted) return;
     setState(() => _user = u);
-    if (_puedeAprobar) _cargarPendientes();
+    if (_puedeAprobar) {
+      _cargarPendientes();
+      AuthService.iniciarPulsoSolicitudes();
+    }
   }
 
   Future<void> _cargarPendientes() async {
@@ -688,10 +705,39 @@ class _SolicitudesPendientesScreenState
   final Set<String> _procesando = {};
   bool _huboCambios = false;
 
+  int _ultimoTotalPulso = AuthService.solicitudesPendientes.value;
+  bool _recargando = false;
+
   @override
   void initState() {
     super.initState();
+    AuthService.solicitudesPendientes.addListener(_alPulso);
     _cargar();
+  }
+
+  @override
+  void dispose() {
+    AuthService.solicitudesPendientes.removeListener(_alPulso);
+    super.dispose();
+  }
+
+  void _alPulso() {
+    final total = AuthService.solicitudesPendientes.value;
+    if (total == _ultimoTotalPulso) return;
+    _ultimoTotalPulso = total;
+    if (!mounted || _cargando || _recargando || _procesando.isNotEmpty) return;
+    if (total == _solicitudes.length) return;
+    _recargarSilencioso();
+  }
+
+  Future<void> _recargarSilencioso() async {
+    _recargando = true;
+    final lista = await AuthService.obtenerSolicitudesPendientes();
+    _recargando = false;
+    if (!mounted) return;
+    setState(() => _solicitudes = lista);
+    _ultimoTotalPulso = lista.length;
+    AuthService.solicitudesPendientes.value = lista.length;
   }
 
   Future<void> _cargar() async {
@@ -702,6 +748,8 @@ class _SolicitudesPendientesScreenState
       _solicitudes = lista;
       _cargando = false;
     });
+    _ultimoTotalPulso = lista.length;
+    AuthService.solicitudesPendientes.value = lista.length;
   }
 
   Color _colorAccion(String tipo) {
@@ -802,6 +850,8 @@ class _SolicitudesPendientesScreenState
       _huboCambios = true;
       setState(
           () => _solicitudes.removeWhere((x) => x.requestId == s.requestId));
+      _ultimoTotalPulso = _solicitudes.length;
+      AuthService.solicitudesPendientes.value = _solicitudes.length;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(aprobar

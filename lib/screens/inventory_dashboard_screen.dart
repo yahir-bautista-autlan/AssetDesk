@@ -199,8 +199,15 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     HardwareKeyboard.instance.addHandler(_teclaNavegacion);
     WidgetsBinding.instance.addObserver(this);
     AuthService.alEventoPropio = (ev) => _recibirEvento(ev, propio: true);
+    AuthService.solicitudesPendientes.addListener(_alCambiarPendientes);
     _cargarUsuario();
     _iniciar();
+  }
+
+  void _alCambiarPendientes() {
+    final total = AuthService.solicitudesPendientes.value;
+    if (!mounted || total == _pendientes) return;
+    setState(() => _pendientes = total);
   }
 
   Future<void> _iniciar() async {
@@ -524,6 +531,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
   @override
   void dispose() {
+    AuthService.solicitudesPendientes.removeListener(_alCambiarPendientes);
     HardwareKeyboard.instance.removeHandler(_teclaNavegacion);
     WidgetsBinding.instance.removeObserver(this);
     _timerSync?.cancel();
