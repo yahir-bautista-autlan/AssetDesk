@@ -318,6 +318,8 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
         spreadsheet: (datos['sheet'] ?? '').toString(),
         ubicacion: (datos['ubicacion'] ?? '').toString(),
         responsableEmail: (datos['responsable'] ?? '').toString(),
+        direccion: (datos['direccion'] ?? '').toString(),
+        codigoFormato: (datos['codigoFormato'] ?? '').toString(),
       );
       if (!mounted) return null;
       if (nuevo == null) {
@@ -333,6 +335,8 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
         nombre: (datos['nombre'] ?? '').toString(),
         responsableEmail: (datos['responsable'] ?? '').toString(),
         ubicacion: (datos['ubicacion'] ?? '').toString(),
+        direccion: datos['direccion']?.toString(),
+        codigoFormato: datos['codigoFormato']?.toString(),
       );
       if (!mounted) return null;
       if (!exito) {
@@ -1659,6 +1663,9 @@ class _InventarioDialogState extends State<_InventarioDialog> {
   late final TextEditingController _nombre;
   late final TextEditingController _sheet;
   late final TextEditingController _ubicacion;
+  late final TextEditingController _direccion;
+  late final TextEditingController _codigoFormato;
+  bool _membreteListo = true;
   String? _responsable;
   String? _error;
 
@@ -1676,8 +1683,26 @@ class _InventarioDialogState extends State<_InventarioDialog> {
     _nombre = TextEditingController(text: i?.nombre ?? '');
     _sheet = TextEditingController(text: i?.spreadsheetId ?? '');
     _ubicacion = TextEditingController(text: i?.ubicacion ?? '');
+    _direccion = TextEditingController();
+    _codigoFormato = TextEditingController();
+    if (i != null) {
+      _membreteListo = false;
+      _cargarMembrete(i.id);
+    }
     final actual = i?.responsableEmail.trim().toLowerCase() ?? '';
     _responsable = actual.isEmpty ? null : actual;
+  }
+
+  Future<void> _cargarMembrete(String id) async {
+    try {
+      final r = await AuthService.obtenerResponsableInventario(id);
+      if (!mounted) return;
+      if (r != null) {
+        _direccion.text = r['direccion'] ?? '';
+        _codigoFormato.text = r['codigoFormato'] ?? '';
+      }
+      setState(() => _membreteListo = r != null);
+    } catch (_) {}
   }
 
   @override
@@ -1685,6 +1710,8 @@ class _InventarioDialogState extends State<_InventarioDialog> {
     _nombre.dispose();
     _sheet.dispose();
     _ubicacion.dispose();
+    _direccion.dispose();
+    _codigoFormato.dispose();
     super.dispose();
   }
 
@@ -2116,6 +2143,8 @@ class _InventarioDialogState extends State<_InventarioDialog> {
       'nombre': _nombre.text.trim(),
       'sheet': _sheet.text.trim(),
       'ubicacion': _ubicacion.text.trim(),
+      if (_membreteListo) 'direccion': _direccion.text.trim(),
+      if (_membreteListo) 'codigoFormato': _codigoFormato.text.trim(),
       'responsable': _responsable!,
       'logoBytes': _logoBytes,
       'logoMime': _logoMime,
@@ -2151,6 +2180,18 @@ class _InventarioDialogState extends State<_InventarioDialog> {
               TextField(
                 controller: _ubicacion,
                 decoration: _decoracion('Ubicación física'),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _direccion,
+                enabled: _membreteListo,
+                decoration: _decoracion('Dirección de la planta (pie de la responsiva)'),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _codigoFormato,
+                enabled: _membreteListo,
+                decoration: _decoracion('Código del formato (ej. F-FSIS-AXO/Rev.02)'),
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(

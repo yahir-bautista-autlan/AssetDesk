@@ -118,6 +118,7 @@ class AuthService {
   static UserModel? _usuarioActual;
   static final Map<String, _CacheEntry> _cache = {};
   static final Map<String, Uint8List> _imgCache = {};
+  static final Map<String, Map<String, String>> _responsablesCache = {};
   static final Map<String, Future<Uint8List?>> _imgEnCurso = {};
 
   static UserModel? get usuarioCache => _usuarioActual;
@@ -277,6 +278,7 @@ class AuthService {
     _usuarioActual = null;
     _invalidarCache();
     _imgCache.clear();
+    _responsablesCache.clear();
     _imgEnCurso.clear();
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -559,6 +561,28 @@ class AuthService {
     return {'headers': <String>[], 'rows': <dynamic>[]};
   }
 
+  static Future<Map<String, String>?> obtenerResponsableInventario(
+      String inventarioId) async {
+    final cacheado = _responsablesCache[inventarioId];
+    if (cacheado != null) return cacheado;
+    final data = await _post({
+      'action': 'obtenerResponsableInventario',
+      'actorEmail': await _actor(),
+      'idInventario': inventarioId,
+    }, lectura: true);
+    if (_ok(data)) {
+      final r = {
+        'nombre': (data!['nombre'] ?? '').toString().trim(),
+        'correo': (data['correo'] ?? '').toString().trim().toLowerCase(),
+        'direccion': (data['direccion'] ?? '').toString().trim(),
+        'codigoFormato': (data['codigoFormato'] ?? '').toString().trim(),
+      };
+      _responsablesCache[inventarioId] = r;
+      return r;
+    }
+    return null;
+  }
+
   static Future<Uint8List?> obtenerImagenInventario(
       String inventarioId, String tipo, String fileId) {
     if (fileId.isEmpty) return Future.value(null);
@@ -641,6 +665,8 @@ class AuthService {
     required String spreadsheet,
     required String ubicacion,
     required String responsableEmail,
+    String direccion = '',
+    String codigoFormato = '',
   }) async {
     final data = await _post({
       'action': 'crearInventario',
@@ -648,6 +674,8 @@ class AuthService {
       'nombre': nombre.trim(),
       'spreadsheet': spreadsheet.trim(),
       'ubicacion': ubicacion.trim(),
+      'direccion': direccion.trim(),
+      'codigoFormato': codigoFormato.trim(),
       'responsableEmail': responsableEmail.trim().toLowerCase(),
     });
     if (_ok(data) && data!['inventario'] != null) {
@@ -661,6 +689,8 @@ class AuthService {
     required String nombre,
     required String responsableEmail,
     required String ubicacion,
+    String? direccion,
+    String? codigoFormato,
   }) async {
     final data = await _post({
       'action': 'actualizarInventario',
@@ -669,7 +699,10 @@ class AuthService {
       'nombre': nombre.trim(),
       'responsableEmail': responsableEmail.trim().toLowerCase(),
       'ubicacion': ubicacion.trim(),
+      if (direccion != null) 'direccion': direccion.trim(),
+      if (codigoFormato != null) 'codigoFormato': codigoFormato.trim(),
     });
+    _responsablesCache.remove(idInventario);
     return _ok(data);
   }
 

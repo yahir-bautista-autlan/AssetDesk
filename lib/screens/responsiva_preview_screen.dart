@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
@@ -81,10 +82,11 @@ class ResponsivaPreviewScreen extends StatefulWidget {
 
 class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     with SingleTickerProviderStateMixin {
-  static const int _dpiBase = 240;
+  static const int _dpiMin = 144;
   static const int _dpiMax = 480;
   static const double _zoomMin = 1;
   static const double _zoomMax = 5;
+  static const PdfPageFormat _formato = PdfPageFormat.a4;
 
   late ResponsivaExtraData _datos;
   bool _cargandoInicial = true;
@@ -104,7 +106,10 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
   double _anchoPagina = 600;
   int _generacion = 0;
   int _genRaster = 0;
-  int _dpiActual = _dpiBase;
+  int _dpiActual = _dpiMin;
+  String _direccionPlanta = '';
+  String _codigoFormato = '';
+  static final Map<String, Future<Uint8List?>> _logos = {};
 
   @override
   void initState() {
@@ -121,7 +126,9 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
       ..addStatusListener((e) {
         if (e == AnimationStatus.completed) _programarNitidez();
       });
-    _iniciar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _iniciar();
+    });
   }
 
   @override
@@ -132,12 +139,59 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     super.dispose();
   }
 
+  Future<void> _esperarTransicion() async {
+    final animacion = ModalRoute.of(context)?.animation;
+    if (animacion == null || animacion.status == AnimationStatus.completed) {
+      return;
+    }
+    final listo = Completer<void>();
+    void escucha(AnimationStatus estado) {
+      if (estado == AnimationStatus.completed ||
+          estado == AnimationStatus.dismissed) {
+        if (!listo.isCompleted) listo.complete();
+      }
+    }
+
+    animacion.addStatusListener(escucha);
+    await listo.future.timeout(const Duration(milliseconds: 800), onTimeout: () {});
+    animacion.removeStatusListener(escucha);
+  }
+
   Future<void> _iniciar() async {
+    _logoBytes();
+    final inv = widget.inventario;
+    final futuroResponsable =
+        inv != null ? AuthService.obtenerResponsableInventario(inv.id) : null;
+    await _esperarTransicion();
+    if (!mounted) return;
     final user = await AuthService.obtenerUsuarioActual();
     if (!mounted) return;
-    _datos.nombreResponsableTI = user?.nombre ?? '';
-    _datos.correoResponsableTI =
-        user != null ? _correoDesdeUsuario(user.correo) : '';
+    Map<String, String>? datosInv;
+    try {
+      datosInv = await futuroResponsable;
+    } catch (_) {}
+    if (!mounted) return;
+    _direccionPlanta = datosInv?['direccion'] ?? '';
+    _codigoFormato = datosInv?['codigoFormato'] ?? '';
+    final correoUsuario =
+        user != null ? _correoDesdeUsuario(user.correo).toLowerCase() : '';
+    final correoResponsable = inv?.responsableEmail.trim().toLowerCase() ?? '';
+    if (correoResponsable.isNotEmpty) {
+      var nombreResponsable = '';
+      if (correoResponsable == correoUsuario) {
+        nombreResponsable = user?.nombre ?? '';
+      } else {
+        nombreResponsable = datosInv?['nombre'] ?? '';
+      }
+      if (!mounted) return;
+      _datos.nombreResponsableTI = nombreResponsable.isNotEmpty
+          ? nombreResponsable
+          : _nombreDesdeCorreo(correoResponsable);
+      _datos.correoResponsableTI = correoResponsable;
+    } else {
+      _datos.nombreResponsableTI = user?.nombre ?? '';
+      _datos.correoResponsableTI = correoUsuario;
+    }
     setState(() => _cargandoInicial = false);
     await _regenerar();
   }
@@ -145,15 +199,17 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
   Future<void> _regenerar() async {
     final miGeneracion = ++_generacion;
     _genRaster++;
+    final dpi = _dpiObjetivo();
     setState(() {
       _renderizando = true;
       _errorRender = null;
     });
 
     try {
-      final bytes = await _generarPdf(PdfPageFormat.letter);
+      await Future.delayed(const Duration(milliseconds: 40));
+      final bytes = await _generarPdf(_formato);
       final paginas = <Uint8List>[];
-      await for (final raster in Printing.raster(bytes, dpi: _dpiBase.toDouble())) {
+      await for (final raster in Printing.raster(bytes, dpi: dpi.toDouble())) {
         paginas.add(await raster.toPng());
       }
 
@@ -162,9 +218,10 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
       setState(() {
         _pdfBytes = bytes;
         _paginas = paginas;
-        _dpiActual = _dpiBase;
+        _dpiActual = dpi;
         _renderizando = false;
       });
+      _programarNitidez();
     } catch (e) {
       if (!mounted || miGeneracion != _generacion) return;
       setState(() {
@@ -227,6 +284,15 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     if (usuario.contains('@')) return usuario;
     final limpio = usuario.toLowerCase().replaceAll(' ', '.');
     return '$limpio@autlan.com.mx';
+  }
+
+  String _nombreDesdeCorreo(String correo) {
+    final local = correo.split('@').first;
+    return local
+        .split(RegExp(r'[._\-]+'))
+        .where((p) => p.isNotEmpty)
+        .map((p) => p[0].toUpperCase() + p.substring(1))
+        .join(' ');
   }
 
   String _softwareDesdeFila() {
@@ -433,11 +499,9 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
 
   int _dpiObjetivo() {
     final dpr = MediaQuery.of(context).devicePixelRatio;
-    final dpi = _anchoPagina * _escalaActual * dpr / 8.5;
-    for (final n in const [_dpiBase, 320, 400]) {
-      if (dpi <= n) return n;
-    }
-    return _dpiMax;
+    final bruto = _anchoPagina * _escalaActual * dpr * 72 / _formato.width;
+    final paso = (bruto / 24).ceil() * 24;
+    return paso.clamp(_dpiMin, _dpiMax).toInt();
   }
 
   void _programarNitidez() {
@@ -466,24 +530,95 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     } catch (_) {}
   }
 
+  Future<Uint8List> _recortarLogo(Uint8List datos) async {
+    try {
+      final codec = await ui.instantiateImageCodec(datos);
+      final frame = await codec.getNextFrame();
+      final img = frame.image;
+      final bd = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (bd == null) return datos;
+      final w = img.width;
+      final h = img.height;
+      final px = bd.buffer.asUint8List();
+      final paso = math.max(1, (w / 240).ceil());
+      var minX = w;
+      var minY = h;
+      var maxX = -1;
+      var maxY = -1;
+      for (var y = 0; y < h; y += paso) {
+        final fila = y * w * 4;
+        for (var x = 0; x < w; x += paso) {
+          final i = fila + x * 4;
+          if (px[i + 3] < 24) continue;
+          if (px[i] > 244 && px[i + 1] > 244 && px[i + 2] > 244) continue;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+      if (maxX < minX || maxY < minY) return datos;
+      final margen = paso + 2;
+      minX = math.max(0, minX - margen);
+      minY = math.max(0, minY - margen);
+      maxX = math.min(w - 1, maxX + margen);
+      maxY = math.min(h - 1, maxY + margen);
+      final cw = maxX - minX + 1;
+      final ch = maxY - minY + 1;
+      if (cw * ch >= w * h * 0.96) return datos;
+      final grabador = ui.PictureRecorder();
+      final lienzo = ui.Canvas(grabador);
+      lienzo.drawImageRect(
+        img,
+        ui.Rect.fromLTWH(
+            minX.toDouble(), minY.toDouble(), cw.toDouble(), ch.toDouble()),
+        ui.Rect.fromLTWH(0, 0, cw.toDouble(), ch.toDouble()),
+        ui.Paint()..filterQuality = ui.FilterQuality.high,
+      );
+      final salida = await grabador.endRecording().toImage(cw, ch);
+      final png = await salida.toByteData(format: ui.ImageByteFormat.png);
+      if (png == null) return datos;
+      return png.buffer.asUint8List();
+    } catch (_) {
+      return datos;
+    }
+  }
+
+  Future<Uint8List?> _logoBytes() {
+    final inv = widget.inventario;
+    final clave = inv == null ? 'asset' : '${inv.id}|${inv.logoId}';
+    var transitorio = false;
+    final futuro = _logos.putIfAbsent(clave, () async {
+      Uint8List? datos;
+      if (inv != null && inv.logoId.isNotEmpty) {
+        try {
+          datos = await AuthService.obtenerImagenInventario(
+              inv.id, 'logo', inv.logoId);
+        } catch (_) {
+          transitorio = true;
+        }
+      }
+      if (datos == null || datos.isEmpty) {
+        try {
+          final ByteData bytes = await rootBundle.load('assets/logo_autlan.png');
+          datos = bytes.buffer.asUint8List();
+        } catch (_) {
+          transitorio = true;
+          return null;
+        }
+      }
+      return _recortarLogo(datos);
+    });
+    futuro.then((_) {
+      if (transitorio) _logos.remove(clave);
+    });
+    return futuro;
+  }
+
   Future<Uint8List> _generarPdf(PdfPageFormat format) async {
     pw.MemoryImage? logo;
-    final inv = widget.inventario;
-    if (inv != null && inv.logoId.isNotEmpty) {
-      try {
-        final datosLogo =
-            await AuthService.obtenerImagenInventario(inv.id, 'logo', inv.logoId);
-        if (datosLogo != null && datosLogo.isNotEmpty) {
-          logo = pw.MemoryImage(datosLogo);
-        }
-      } catch (_) {}
-    }
-    if (logo == null) {
-      try {
-        final ByteData bytes = await rootBundle.load('assets/logo_autlan.png');
-        logo = pw.MemoryImage(bytes.buffer.asUint8List());
-      } catch (_) {}
-    }
+    final logoDatos = await _logoBytes();
+    if (logoDatos != null) logo = pw.MemoryImage(logoDatos);
 
     final snKey = _snKeyPara(widget.nombrePestana);
     final serieEquipo = _valor(snKey);
@@ -492,13 +627,13 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     final (marcaEquipo, modeloEquipo) = _separarMarcaModelo();
 
     final nombreEmpresa = _nombreEncabezado();
+    final ahora = DateTime.now();
     final fechaStr =
-        '${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}';
+        '${ahora.day.toString().padLeft(2, '0')}/${ahora.month.toString().padLeft(2, '0')}/${ahora.year}';
 
     final filasTabla = <List<String>>[
       [tipoEquipo, marcaEquipo, modeloEquipo, serieEquipo],
     ];
-
 
     if (_datos.incluyeCargador) {
       filasTabla.add([
@@ -522,23 +657,63 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     final pdf = pw.Document();
 
     final azulOscuro = PdfColor.fromHex('#2F5597');
-    final fondoClaro = PdfColor.fromHex('#E6F0F9');
-    final colorCelesteTexto = PdfColor.fromHex('#5B9BD5');
-    final lineaTabla = PdfColor.fromHex('#9DC3E6');
+    final fondoClaro = PdfColor.fromHex('#DAEEF5');
+    final colorCelesteTexto = PdfColor.fromHex('#4F7599');
+    final lineaTabla = PdfColor.fromHex('#9DC3D0');
 
-    const flexes = [4, 5, 6, 5];
+    const anchosColumnas = [105.5, 129.0, 150.0];
     const cabeceras = ['Equipo', 'Marca', 'Modelo', 'Serie'];
+    const tamTabla = 12.5;
+    const tamOtros = 11.0;
+
+    final itemsOtros = _na(_datos.otrosSoftware)
+        .split('|')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (itemsOtros.isEmpty) itemsOtros.add('N/A');
+
+    var lineasOtros = 1;
+    var anchoLinea = 0.0;
+    const anchoUtilOtros = 390.0;
+    for (final item in itemsOtros) {
+      final w = item.length * tamOtros * 0.5 + 16;
+      if (anchoLinea > 0 && anchoLinea + w > anchoUtilOtros) {
+        lineasOtros++;
+        anchoLinea = w;
+      } else {
+        anchoLinea += w;
+      }
+    }
+    var exceso = (filasTabla.length - 1) * 21.0 +
+            (lineasOtros > 1 ? (lineasOtros - 1) * 13.8 + 7 : 0) -
+            63;
+    double recortar(double maximo) {
+      if (exceso <= 0) return 0;
+      final r = exceso < maximo ? exceso : maximo;
+      exceso -= r;
+      return r;
+    }
+
+    final espacio1 = 50.5 - recortar(34.5);
+    final espacio2 = 20 - recortar(6);
+    final espacio3 = 20.5 - recortar(6.5);
+
+    pw.Widget celda(int k, pw.Widget hijo) {
+      if (k < 3) return pw.SizedBox(width: anchosColumnas[k], child: hijo);
+      return pw.Expanded(child: hijo);
+    }
 
     pw.Widget filaTabla(List<String> valores, {bool cabecera = false}) {
       return pw.Row(
         children: [
           for (var k = 0; k < 4; k++)
-            pw.Expanded(
-              flex: flexes[k],
-              child: pw.Text(
+            celda(
+              k,
+              pw.Text(
                 cabecera ? cabeceras[k] : _na(valores[k]),
                 style: pw.TextStyle(
-                  fontSize: 10,
+                  fontSize: tamTabla,
                   fontWeight:
                       cabecera ? pw.FontWeight.bold : pw.FontWeight.normal,
                   color: cabecera ? azulOscuro : PdfColors.black,
@@ -549,179 +724,239 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
       );
     }
 
+    pw.Widget banda(pw.Widget hijo,
+        {required bool relleno, double vertical = 0}) {
+      return pw.Container(
+        width: double.infinity,
+        constraints: const pw.BoxConstraints(minHeight: 21),
+        color: relleno ? fondoClaro : PdfColors.white,
+        padding: pw.EdgeInsets.fromLTRB(11.5, vertical, 6, vertical),
+        alignment: pw.Alignment.centerLeft,
+        child: hijo,
+      );
+    }
+
+    pw.Widget tituloGrueso(String texto, double tam, PdfColor color) {
+      final estilo = pw.TextStyle(fontSize: tam, color: color);
+      return pw.Stack(
+        children: [
+          pw.Text(texto, style: estilo),
+          pw.Positioned(left: 0.4, top: 0, child: pw.Text(texto, style: estilo)),
+          pw.Positioned(
+              left: 0.2, top: 0.3, child: pw.Text(texto, style: estilo)),
+        ],
+      );
+    }
+
+    pw.Widget etiqueta(String texto, double izquierda) {
+      return pw.Padding(
+        padding: pw.EdgeInsets.only(left: izquierda),
+        child: pw.Text(
+          texto,
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+        ),
+      );
+    }
+
+    final anchoPag = format.width;
+    final altoPag = format.height;
+
     pdf.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.letter,
-        margin: const pw.EdgeInsets.fromLTRB(32, 28, 32, 24),
+        pageFormat: format,
+        margin: pw.EdgeInsets.zero,
         build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+          return pw.Stack(
+            fit: pw.StackFit.expand,
             children: [
-              pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Container(
-                    width: 110,
-                    height: 95,
-                    alignment: pw.Alignment.centerLeft,
-                    child: logo != null
-                        ? pw.Image(logo,
-                            fit: pw.BoxFit.contain,
-                            alignment: pw.Alignment.centerLeft)
-                        : pw.SizedBox(),
-                  ),
-                  pw.Expanded(
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  pw.SizedBox(height: 47),
+                  pw.SizedBox(
+                    width: anchoPag,
+                    height: 80,
+                    child: pw.Stack(
+                      fit: pw.StackFit.expand,
                       children: [
-                        pw.Text(
-                          nombreEmpresa,
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            fontSize: 17,
-                            color: azulOscuro,
+                        pw.Positioned(
+                          left: 41,
+                          top: 0,
+                          child: pw.SizedBox(
+                            width: 96,
+                            height: 80,
+                            child: logo != null
+                                ? pw.Image(logo,
+                                    fit: pw.BoxFit.contain,
+                                    alignment: pw.Alignment.centerLeft)
+                                : pw.SizedBox(),
                           ),
                         ),
-                        pw.SizedBox(height: 14),
-                        pw.Text(
-                          'HOJA RESPONSIVA DE EQUIPO',
-                          style: pw.TextStyle(
-                            fontSize: 11,
-                            fontWeight: pw.FontWeight.bold,
+                        pw.Positioned(
+                          left: 0,
+                          right: 0,
+                          top: 14.9,
+                          child: pw.Center(
+                            child: tituloGrueso(nombreEmpresa, 15, azulOscuro),
+                          ),
+                        ),
+                        pw.Positioned(
+                          left: 0,
+                          right: 0,
+                          top: 53.4,
+                          child: pw.Center(
+                            child: pw.Text(
+                              'HOJA RESPONSIVA DE EQUIPO',
+                              style: pw.TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  pw.SizedBox(width: 110),
-                ],
-              ),
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text(
-                  'Fecha: $fechaStr',
-                  style: const pw.TextStyle(fontSize: 10),
-                ),
-              ),
-              pw.SizedBox(height: 18),
-              pw.Padding(
-                padding: const pw.EdgeInsets.only(left: 6),
-                child: pw.Text(
-                  'Descripción del equipo:',
-                  style: pw.TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: pw.FontWeight.bold,
-                    color: colorCelesteTexto,
-                  ),
-                ),
-              ),
-              pw.SizedBox(height: 14),
-              pw.Container(
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: azulOscuro, width: 1.8),
-                  borderRadius: pw.BorderRadius.circular(14),
-                ),
-                padding: const pw.EdgeInsets.all(4),
-                child: pw.Column(
-                  children: [
-                    pw.Container(
-                      width: double.infinity,
-                      padding: const pw.EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 4),
-                      child: filaTabla(const [], cabecera: true),
-                    ),
-                    pw.Container(height: 1, color: lineaTabla),
-                    for (var k = 0; k < filasTabla.length; k++)
-                      pw.Container(
-                        width: double.infinity,
-                        color: k.isEven ? fondoClaro : PdfColors.white,
-                        padding: const pw.EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 4),
-                        child: filaTabla(filasTabla[k]),
-                      ),
-                    pw.Container(
-                      width: double.infinity,
-                      color: filasTabla.length.isEven
-                          ? fondoClaro
-                          : PdfColors.white,
-                      padding: const pw.EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 4),
-                      child: pw.RichText(
-                        text: pw.TextSpan(
-                          children: [
-                            pw.TextSpan(
-                              text: 'Otros: ',
-                              style: pw.TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: pw.FontWeight.bold),
-                            ),
-                            pw.TextSpan(
-                              text: _na(_datos.otrosSoftware),
-                              style: const pw.TextStyle(fontSize: 10),
-                            ),
-                          ],
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(right: 29.3),
+                    child: pw.SizedBox(
+                      width: anchoPag - 29.3,
+                      child: pw.Align(
+                        alignment: pw.Alignment.centerRight,
+                        child: pw.Text(
+                          'Fecha: $fechaStr',
+                          style: const pw.TextStyle(fontSize: 11.5),
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 34),
-              pw.Padding(
-                padding: const pw.EdgeInsets.only(left: 6),
-                child: pw.Text(
-                  'Responsable de TI:',
-                  style: pw.TextStyle(
-                      fontSize: 11, fontWeight: pw.FontWeight.bold),
-                ),
-              ),
-              pw.SizedBox(height: 8),
-              _cajaFormulario(
-                borderColor: azulOscuro,
-                nombre: _datos.nombreResponsableTI,
-                empresa: _datos.empresaResponsableTI,
-                correo: _datos.correoResponsableTI,
-              ),
-              pw.SizedBox(height: 26),
-              pw.Padding(
-                padding: const pw.EdgeInsets.only(left: 6),
-                child: pw.Text(
-                  'Datos de quien Recibe el Equipo:',
-                  style: pw.TextStyle(
-                      fontSize: 11, fontWeight: pw.FontWeight.bold),
-                ),
-              ),
-              pw.SizedBox(height: 8),
-              _cajaFormulario(
-                borderColor: azulOscuro,
-                nombre: _datos.nombreRecibe,
-                empresa: _datos.empresaRecibe,
-                correo: _datos.correoRecibe,
-              ),
-              pw.SizedBox(height: 26),
-              pw.Padding(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 6),
-                child: pw.Text(
-                  'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
-                  'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
-                  'presentar y/o a devolver en el momento en que me sea requerido.',
-                  style: const pw.TextStyle(fontSize: 9.5, height: 1.35),
-                ),
-              ),
-              pw.Spacer(),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    'Campamento Minero No.11, Aire Libre, Teziutlán Puebla, C.P.73960',
-                    style: const pw.TextStyle(fontSize: 8),
                   ),
-                  pw.Text(
-                    'F-FSIS-AXO/Rev.02',
-                    style: const pw.TextStyle(fontSize: 8),
+                  pw.SizedBox(height: 12),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(left: 47),
+                    child: pw.Text(
+                      'Descripción del equipo:',
+                      style: pw.TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: pw.FontWeight.bold,
+                        color: colorCelesteTexto,
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 14),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(left: 38, right: 23.3),
+                    child: pw.Container(
+                      width: double.infinity,
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: azulOscuro, width: 2),
+                        borderRadius: pw.BorderRadius.circular(16),
+                      ),
+                      padding: const pw.EdgeInsets.fromLTRB(4, 9, 4, 13),
+                      child: pw.Column(
+                        children: [
+                          banda(filaTabla(const [], cabecera: true),
+                              relleno: false),
+                          pw.Container(height: 1, color: lineaTabla),
+                          for (var k = 0; k < filasTabla.length; k++)
+                            banda(filaTabla(filasTabla[k]), relleno: k.isEven),
+                          banda(
+                            pw.Row(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
+                                pw.SizedBox(
+                                  width: anchosColumnas[0],
+                                  child: pw.Text(
+                                    'Otros:',
+                                    style: pw.TextStyle(
+                                      fontSize: tamTabla,
+                                      fontWeight: pw.FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                pw.Expanded(
+                                  child: pw.Wrap(
+                                    spacing: 7,
+                                    runSpacing: 2.5,
+                                    children: [
+                                      for (var k = 0;
+                                          k < itemsOtros.length;
+                                          k++)
+                                        pw.Text(
+                                          k < itemsOtros.length - 1
+                                              ? '${itemsOtros[k]}  |'
+                                              : itemsOtros[k],
+                                          style: const pw.TextStyle(
+                                              fontSize: tamOtros),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            relleno: filasTabla.length.isEven,
+                            vertical: 3.5,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: espacio1),
+                  etiqueta('Responsable de TI:', 46),
+                  pw.SizedBox(height: 6),
+                  _cajaFormulario(
+                    borderColor: azulOscuro,
+                    nombre: _datos.nombreResponsableTI,
+                    empresa: _datos.empresaResponsableTI,
+                    correo: _datos.correoResponsableTI,
+                    izquierda: 27,
+                    derecha: 25.3,
+                  ),
+                  pw.SizedBox(height: espacio2),
+                  etiqueta('Datos de quien Recibe el Equipo:', 46),
+                  pw.SizedBox(height: 9),
+                  _cajaFormulario(
+                    borderColor: azulOscuro,
+                    nombre: _datos.nombreRecibe,
+                    empresa: _datos.empresaRecibe,
+                    correo: _datos.correoRecibe,
+                    izquierda: 27,
+                    derecha: 25.3,
+                  ),
+                  pw.SizedBox(height: espacio3),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(left: 47, right: 15.3),
+                    child: pw.Text(
+                      'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
+                      'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
+                      'presentar y/o a devolver en el momento en que me sea requerido.',
+                      style: const pw.TextStyle(fontSize: 10.5, lineSpacing: 2.2),
+                    ),
                   ),
                 ],
               ),
+              if (_direccionPlanta.isNotEmpty || _codigoFormato.isNotEmpty)
+                pw.Positioned(
+                  left: 27,
+                  right: 32.3,
+                  top: altoPag - 44,
+                  child: pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Expanded(
+                        child: pw.Text(
+                          _direccionPlanta,
+                          style: const pw.TextStyle(fontSize: 10),
+                        ),
+                      ),
+                      pw.SizedBox(width: 12),
+                      pw.Text(
+                        _codigoFormato,
+                        style: const pw.TextStyle(fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           );
         },
@@ -736,15 +971,17 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     required String nombre,
     required String empresa,
     required String correo,
+    required double izquierda,
+    required double derecha,
   }) {
     pw.Widget fila(String label, pw.Widget valor) {
-      return pw.Padding(
-        padding: const pw.EdgeInsets.only(bottom: 14),
+      return pw.SizedBox(
+        height: 26.8,
         child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
           children: [
             pw.SizedBox(
-              width: 68,
+              width: 88,
               child: pw.Text(
                 label,
                 style: const pw.TextStyle(fontSize: 11),
@@ -764,32 +1001,36 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
           ),
         );
 
-    return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.fromLTRB(20, 16, 20, 4),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: borderColor, width: 1.8),
-        borderRadius: pw.BorderRadius.circular(18),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          fila('Nombre:', subrayado(nombre)),
-          fila('Empresa:', subrayado(empresa)),
-          fila('Correo:', subrayado(correo)),
-          fila(
-            'Firma:',
-            pw.Container(
-              width: 160,
-              height: 12,
-              decoration: const pw.BoxDecoration(
-                border: pw.Border(
-                  bottom: pw.BorderSide(color: PdfColors.black, width: 0.8),
+    return pw.Padding(
+      padding: pw.EdgeInsets.only(left: izquierda, right: derecha),
+      child: pw.Container(
+        width: double.infinity,
+        height: 132,
+        padding: const pw.EdgeInsets.fromLTRB(19, 9.6, 19, 0),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: borderColor, width: 2),
+          borderRadius: pw.BorderRadius.circular(20),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            fila('Nombre:', subrayado(nombre)),
+            fila('Empresa:', subrayado(empresa)),
+            fila('Correo:', subrayado(correo)),
+            fila(
+              'Firma:',
+              pw.Container(
+                width: 134,
+                height: 14,
+                decoration: const pw.BoxDecoration(
+                  border: pw.Border(
+                    bottom: pw.BorderSide(color: PdfColors.black, width: 0.8),
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -832,7 +1073,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
       builder: (context, constraints) {
         _viewport = Size(constraints.maxWidth, constraints.maxHeight);
 
-        const relacion = 8.5 / 11.0;
+        final relacion = _formato.width / _formato.height;
         final anchoPorAlto = (constraints.maxHeight - 20) * relacion;
         final anchoPagina = [
           constraints.maxWidth - 24,
@@ -879,7 +1120,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
                           child: Image.memory(
                             png,
                             fit: BoxFit.fitWidth,
-                            filterQuality: FilterQuality.high,
+                            filterQuality: FilterQuality.medium,
                             gaplessPlayback: true,
                             isAntiAlias: true,
                           ),
@@ -1151,9 +1392,10 @@ class _CompletarDatosResponsivaScreen extends StatefulWidget {
 
 class _CompletarDatosResponsivaScreenState
     extends State<_CompletarDatosResponsivaScreen> {
-  static const primaryPurple = Color(0xFF532E7C);
-  static const _borde = Color(0xFFD5D5E0);
-  static const _textoSuave = Color(0xFF6B7280);
+  static const _fondo = Color(0xFF2C1D42);
+  static const _moradoBoton = Color(0xFF7B3FB0);
+  static const _lila = Color(0xFFD9C2F0);
+  static const _lilaFuerte = Color(0xFFB98CE0);
 
   late bool _incluyeCargador;
   late bool _incluyeMonitor;
@@ -1218,7 +1460,6 @@ class _CompletarDatosResponsivaScreenState
   Widget _campo({
     required TextEditingController controlador,
     required String etiqueta,
-    required IconData icono,
     String? ayuda,
     TextInputType? teclado,
     TextCapitalization mayusculas = TextCapitalization.none,
@@ -1234,30 +1475,30 @@ class _CompletarDatosResponsivaScreenState
         textInputAction: ultimo ? TextInputAction.done : TextInputAction.next,
         minLines: 1,
         maxLines: maxLineas,
-        style: const TextStyle(fontSize: 15, color: Colors.black87),
+        cursorColor: Colors.white,
+        style: const TextStyle(fontSize: 15, color: Colors.white),
         decoration: InputDecoration(
           labelText: etiqueta,
           hintText: ayuda,
           floatingLabelBehavior: FloatingLabelBehavior.always,
           labelStyle: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: primaryPurple),
-          hintStyle: const TextStyle(color: Color(0xFFA3A3B0), fontSize: 14),
-          prefixIcon: Icon(icono, size: 20, color: primaryPurple),
-          suffixIcon: const Icon(Icons.edit_outlined,
-              size: 17, color: Color(0xFFB4B4C0)),
+              fontSize: 13, fontWeight: FontWeight.w600, color: _lila),
+          floatingLabelStyle: const TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w600, color: _lila),
+          hintStyle: TextStyle(
+              color: Colors.white.withOpacity(0.35), fontSize: 14),
           filled: true,
-          fillColor: Colors.white,
+          fillColor: Colors.white.withOpacity(0.08),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _borde, width: 1.2),
+            borderSide:
+                BorderSide(color: Colors.white.withOpacity(0.22), width: 1.2),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: primaryPurple, width: 2),
+            borderSide: const BorderSide(color: _lilaFuerte, width: 2),
           ),
         ),
       ),
@@ -1275,13 +1516,9 @@ class _CompletarDatosResponsivaScreenState
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withOpacity(0.07),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFECECF2)),
-        boxShadow: const [
-          BoxShadow(
-              color: Color(0x0F000000), blurRadius: 12, offset: Offset(0, 4)),
-        ],
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1292,10 +1529,10 @@ class _CompletarDatosResponsivaScreenState
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1EAF8),
+                  color: Colors.white.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(icono, size: 20, color: primaryPurple),
+                child: Icon(icono, size: 20, color: _lila),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1306,10 +1543,10 @@ class _CompletarDatosResponsivaScreenState
                         style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
-                            color: Colors.black87)),
+                            color: Colors.white)),
                     Text(subtitulo,
                         style: const TextStyle(
-                            fontSize: 12, color: _textoSuave)),
+                            fontSize: 12, color: Colors.white60)),
                   ],
                 ),
               ),
@@ -1333,21 +1570,28 @@ class _CompletarDatosResponsivaScreenState
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         decoration: BoxDecoration(
-          color: valor ? const Color(0xFFF6F0FB) : const Color(0xFFF7F7FA),
+          color: Colors.white.withOpacity(valor ? 0.12 : 0.05),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-              color: valor ? primaryPurple.withOpacity(0.35) : _borde),
+              color: valor
+                  ? _lilaFuerte.withOpacity(0.6)
+                  : Colors.white.withOpacity(0.16)),
         ),
         child: SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          activeColor: primaryPurple,
+          activeColor: Colors.white,
+          activeTrackColor: _moradoBoton,
+          inactiveThumbColor: Colors.white70,
+          inactiveTrackColor: Colors.white.withOpacity(0.15),
           title: Text(titulo,
-              style:
-                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white)),
           subtitle: detalle == null
               ? null
               : Text(detalle,
-                  style: const TextStyle(fontSize: 12, color: _textoSuave)),
+                  style: const TextStyle(fontSize: 12, color: Colors.white60)),
           value: valor,
           onChanged: alCambiar,
         ),
@@ -1357,218 +1601,217 @@ class _CompletarDatosResponsivaScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F3F8),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(8, 8, 20, 10),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back, color: primaryPurple),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Editar responsiva',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
+    return Theme(
+      data: Theme.of(context).copyWith(
+        textSelectionTheme: TextSelectionThemeData(
+          cursorColor: Colors.white,
+          selectionColor: _moradoBoton.withOpacity(0.55),
+          selectionHandleColor: _lilaFuerte,
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: _fondo,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 18),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Editar responsiva',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
+              Text('Toca un campo para modificarlo. Lo vacío se imprime como N/A.',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.white60, fontSize: 11)),
+            ],
+          ),
+        ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _tarjeta(
+                            icono: Icons.devices_other_outlined,
+                            titulo: 'Accesorios incluidos',
+                            subtitulo: 'Se agregan como filas en la tabla',
+                            hijos: [
+                              _interruptor(
+                                titulo: 'Cargador',
+                                valor: _incluyeCargador,
+                                alCambiar: (v) =>
+                                    setState(() => _incluyeCargador = v),
+                              ),
+                              if (_incluyeCargador) ...[
+                                const SizedBox(height: 4),
+                                _campo(
+                                  controlador: _marcaCargador,
+                                  etiqueta: 'Marca del cargador',
+                                  ayuda: 'Si lo dejas vacío usa la del equipo',
+                                  mayusculas: TextCapitalization.words,
+                                ),
+                                _campo(
+                                  controlador: _serieCargador,
+                                  etiqueta: 'Serie del cargador',
+                                  ayuda: 'Ej. 5C50PV8',
+                                  mayusculas: TextCapitalization.characters,
+                                ),
+                              ],
+                              if (widget.mostrarMonitor)
+                                _interruptor(
+                                  titulo: 'Monitor',
+                                  detalle:
+                                      'Marca, modelo y serie se toman del registro',
+                                  valor: _incluyeMonitor,
+                                  alCambiar: (v) =>
+                                      setState(() => _incluyeMonitor = v),
+                                ),
+                            ],
                           ),
-                        ),
-                        const Text(
-                          'Toca un campo para modificarlo. Lo vacío se imprime como N/A.',
-                          style: TextStyle(fontSize: 12, color: _textoSuave),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1, color: Color(0xFFE8E8EE)),
-            Expanded(
-              child: SingleChildScrollView(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 640),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _tarjeta(
-                          icono: Icons.devices_other_outlined,
-                          titulo: 'Accesorios incluidos',
-                          subtitulo: 'Se agregan como filas en la tabla',
-                          hijos: [
-                            _interruptor(
-                              titulo: 'Cargador',
-                              valor: _incluyeCargador,
-                              alCambiar: (v) =>
-                                  setState(() => _incluyeCargador = v),
-                            ),
-                            if (_incluyeCargador) ...[
-                              const SizedBox(height: 4),
+                          _tarjeta(
+                            icono: Icons.apps_outlined,
+                            titulo: 'Software y licencias',
+                            subtitulo: 'Aparece en la fila "Otros"',
+                            hijos: [
                               _campo(
-                                controlador: _marcaCargador,
-                                etiqueta: 'Marca del cargador',
-                                ayuda: 'Si lo dejas vacío usa la del equipo',
-                                icono: Icons.bolt_outlined,
+                                controlador: _otrosSoftware,
+                                etiqueta: 'Otros',
+                                ayuda: 'Ej. Microsoft Office 365',
+                                maxLineas: 3,
+                              ),
+                            ],
+                          ),
+                          _tarjeta(
+                            icono: Icons.support_agent_outlined,
+                            titulo: 'Responsable de TI',
+                            subtitulo: 'Quien entrega el equipo',
+                            hijos: [
+                              _campo(
+                                controlador: _nombreTI,
+                                etiqueta: 'Nombre completo',
+                                ayuda: 'Escribe el nombre',
                                 mayusculas: TextCapitalization.words,
                               ),
                               _campo(
-                                controlador: _serieCargador,
-                                etiqueta: 'Serie del cargador',
-                                ayuda: 'Ej. 5C50PV8',
-                                icono: Icons.tag,
-                                mayusculas: TextCapitalization.characters,
+                                controlador: _correoTI,
+                                etiqueta: 'Correo',
+                                ayuda: 'nombre@autlan.com.mx',
+                                teclado: TextInputType.emailAddress,
+                                ultimo: true,
                               ),
                             ],
-                            if (widget.mostrarMonitor)
-                              _interruptor(
-                                titulo: 'Monitor',
-                                detalle:
-                                    'Marca, modelo y serie se toman del registro',
-                                valor: _incluyeMonitor,
-                                alCambiar: (v) =>
-                                    setState(() => _incluyeMonitor = v),
+                          ),
+                          _tarjeta(
+                            icono: Icons.badge_outlined,
+                            titulo: 'Quien recibe el equipo',
+                            subtitulo: 'Usuario que firma la responsiva',
+                            hijos: [
+                              _campo(
+                                controlador: _nombreRecibe,
+                                etiqueta: 'Nombre completo',
+                                ayuda: 'Escribe el nombre',
+                                mayusculas: TextCapitalization.words,
                               ),
-                          ],
-                        ),
-                        _tarjeta(
-                          icono: Icons.apps_outlined,
-                          titulo: 'Software y licencias',
-                          subtitulo: 'Aparece en la fila "Otros"',
-                          hijos: [
-                            _campo(
-                              controlador: _otrosSoftware,
-                              etiqueta: 'Otros',
-                              ayuda: 'Ej. Microsoft Office 365',
-                              icono: Icons.workspace_premium_outlined,
-                              maxLineas: 3,
-                            ),
-                          ],
-                        ),
-                        _tarjeta(
-                          icono: Icons.support_agent_outlined,
-                          titulo: 'Responsable de TI',
-                          subtitulo: 'Quien entrega el equipo',
-                          hijos: [
-                            _campo(
-                              controlador: _nombreTI,
-                              etiqueta: 'Nombre completo',
-                              ayuda: 'Escribe el nombre',
-                              icono: Icons.person_outline,
-                              mayusculas: TextCapitalization.words,
-                            ),
-                            _campo(
-                              controlador: _correoTI,
-                              etiqueta: 'Correo',
-                              ayuda: 'nombre@autlan.com.mx',
-                              icono: Icons.mail_outline,
-                              teclado: TextInputType.emailAddress,
-                              ultimo: true,
-                            ),
-                          ],
-                        ),
-                        _tarjeta(
-                          icono: Icons.badge_outlined,
-                          titulo: 'Quien recibe el equipo',
-                          subtitulo: 'Usuario que firma la responsiva',
-                          hijos: [
-                            _campo(
-                              controlador: _nombreRecibe,
-                              etiqueta: 'Nombre completo',
-                              ayuda: 'Escribe el nombre',
-                              icono: Icons.person_outline,
-                              mayusculas: TextCapitalization.words,
-                            ),
-                            _campo(
-                              controlador: _empresaRecibe,
-                              etiqueta: 'Empresa',
-                              ayuda: 'Ej. AUTLAN',
-                              icono: Icons.business_outlined,
-                              mayusculas: TextCapitalization.characters,
-                            ),
-                            _campo(
-                              controlador: _correoRecibe,
-                              etiqueta: 'Correo',
-                              ayuda: 'nombre@autlan.com.mx',
-                              icono: Icons.mail_outline,
-                              teclado: TextInputType.emailAddress,
-                              ultimo: true,
-                            ),
-                          ],
-                        ),
-                      ],
+                              _campo(
+                                controlador: _empresaRecibe,
+                                etiqueta: 'Empresa',
+                                ayuda: 'Ej. AUTLAN',
+                                mayusculas: TextCapitalization.characters,
+                              ),
+                              _campo(
+                                controlador: _correoRecibe,
+                                etiqueta: 'Correo',
+                                ayuda: 'nombre@autlan.com.mx',
+                                teclado: TextInputType.emailAddress,
+                                ultimo: true,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(top: BorderSide(color: Color(0xFFE8E8EE))),
-              ),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: primaryPurple,
-                            side: const BorderSide(color: _borde),
-                            minimumSize: const Size.fromHeight(50),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
-                          ),
-                          child: const Text('Cancelar',
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(32),
+                        border: Border.all(color: Colors.white.withOpacity(0.22)),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 3,
-                        child: FilledButton.icon(
-                          onPressed: _guardar,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: primaryPurple,
-                            minimumSize: const Size.fromHeight(50),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: BorderSide(
+                                    color: Colors.white.withOpacity(0.55),
+                                    width: 1.2),
+                                shape: const StadiumBorder(),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                              child: const Text('Cancelar',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold)),
+                            ),
                           ),
-                          icon: const Icon(Icons.check_rounded, size: 20),
-                          label: const FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text('Guardar y actualizar',
-                                style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 3,
+                            child: FilledButton.icon(
+                              onPressed: _guardar,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _moradoBoton,
+                                foregroundColor: Colors.white,
+                                shape: const StadiumBorder(),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                              icon: const Icon(Icons.check_rounded, size: 20),
+                              label: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Guardar y actualizar',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold)),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
