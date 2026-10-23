@@ -503,15 +503,26 @@ class AuthService {
     required Uint8List bytes,
     required String mime,
   }) async {
-    final data = await _post({
-      'action': 'guardarImagenInventario',
-      'actorEmail': await _actor(),
-      'idInventario': idInventario,
-      'tipo': tipo,
-      'base64': base64Encode(bytes),
-      'mime': mime,
-    });
-    return _ok(data);
+    final actor = await _actor();
+    final cuerpo = base64Encode(bytes);
+    for (var intento = 0; intento < 3; intento++) {
+      final data = await _post({
+        'action': 'guardarImagenInventario',
+        'actorEmail': actor,
+        'idInventario': idInventario,
+        'tipo': tipo,
+        'base64': cuerpo,
+        'mime': mime,
+      });
+      if (_ok(data)) return true;
+      final error = ultimoError.toLowerCase();
+      final reintentable = error.contains('candado') ||
+          error.contains('ocupado') ||
+          error.contains('lock');
+      if (!reintentable) return false;
+      await Future.delayed(Duration(seconds: 2 + intento * 2));
+    }
+    return false;
   }
 
   static Future<List<InventoryModel>?> refrescarInventariosUsuario() async {
