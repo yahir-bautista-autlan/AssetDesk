@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +14,24 @@ import 'screens/inventory_menu_screen.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const AssetDeskApp());
+}
+
+class _TransicionLigera extends PageTransitionsBuilder {
+  const _TransicionLigera();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return FadeTransition(
+      opacity: animation.drive(CurveTween(curve: Curves.easeOut)),
+      child: child,
+    );
+  }
 }
 
 final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
@@ -181,6 +200,14 @@ class _AssetDeskAppState extends State<AssetDeskApp>
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4A2574)),
         useMaterial3: true,
+        pageTransitionsTheme: kIsWeb
+            ? PageTransitionsTheme(
+                builders: {
+                  for (final plataforma in TargetPlatform.values)
+                    plataforma: const _TransicionLigera(),
+                },
+              )
+            : const PageTransitionsTheme(),
         snackBarTheme: SnackBarThemeData(
           behavior: SnackBarBehavior.floating,
           elevation: 6,
