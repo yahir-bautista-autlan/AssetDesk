@@ -561,6 +561,23 @@ class AuthService {
     return {'headers': <String>[], 'rows': <dynamic>[]};
   }
 
+  static Future<bool> enviarReporteCorreo({
+    required String pestana,
+    required String archivo,
+    required String inventario,
+    required List<int> bytes,
+  }) async {
+    final data = await _post({
+      'action': 'enviarReporteCorreo',
+      'actorEmail': await _actor(),
+      'pestana': pestana,
+      'archivo': archivo,
+      'inventario': inventario,
+      'base64': base64Encode(bytes),
+    });
+    return _ok(data);
+  }
+
   static Future<Map<String, String>?> obtenerResponsableInventario(
       String inventarioId) async {
     final cacheado = _responsablesCache[inventarioId];

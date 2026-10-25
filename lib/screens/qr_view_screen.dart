@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:gal/gal.dart';
 import 'package:universal_html/html.dart' as html;
 
 
@@ -141,15 +141,14 @@ class _QrViewScreenState extends State<QrViewScreen> {
           
           _mostrarToastExito();
         } else {
-          final result = await ImageGallerySaver.saveImage(
-            pngBytes,
-            quality: 100,
-            name: "QR_${widget.serialNumber}",
-          );
-
-          if (result != null && (result['isSuccess'] == true || result.toString().isNotEmpty)) {
-            _mostrarToastExito();
+          if (!await Gal.hasAccess()) {
+            await Gal.requestAccess();
           }
+          await Gal.putImageBytes(
+            pngBytes,
+            name: 'QR_${widget.serialNumber}',
+          );
+          _mostrarToastExito();
         }
       }
     } catch (e) {

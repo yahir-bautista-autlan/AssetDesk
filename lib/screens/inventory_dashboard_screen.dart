@@ -1830,6 +1830,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
                             headers: activeHeaders,
                             rows: filteredRows,
                             correo: _user?.correo ?? AuthService.actorEmailSync,
+                            inventario: widget.inventario?.nombre ?? '',
                           )),
                         );
                       },
@@ -4099,12 +4100,14 @@ class _ExportarDialog extends StatefulWidget {
   final List<String> headers;
   final List<dynamic> rows;
   final String correo;
+  final String inventario;
 
   const _ExportarDialog({
     required this.nombrePestana,
     required this.headers,
     required this.rows,
     required this.correo,
+    this.inventario = '',
   });
 
   @override
@@ -4114,9 +4117,13 @@ class _ExportarDialog extends StatefulWidget {
 class _ExportarDialogState extends State<_ExportarDialog> {
   static const primaryPurple = Color(0xFF532E7C);
   bool _isProcessing = false;
+  String? _error;
 
   Future<void> _procesarExcel(bool descargar) async {
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _error = null;
+    });
     final excel = Excel.createExcel();
     excel.rename('Sheet1', 'Reporte');
     final sheet = excel['Reporte'];
@@ -4159,9 +4166,15 @@ class _ExportarDialogState extends State<_ExportarDialog> {
         Navigator.pop(context);
       }
     } else {
-      await Future.delayed(const Duration(seconds: 2));
+      final enviado = await AuthService.enviarReporteCorreo(
+        pestana: widget.nombrePestana,
+        archivo: 'Reporte_${widget.nombrePestana}.xlsx',
+        inventario: widget.inventario,
+        bytes: bytes,
+      );
 
-      if (mounted) {
+      if (!mounted) return;
+      if (enviado) {
         setState(() => _isProcessing = false);
         Navigator.pop(context);
         showDialog(
@@ -4169,6 +4182,13 @@ class _ExportarDialogState extends State<_ExportarDialog> {
           barrierDismissible: false,
           builder: (context) => _Compacto(ancho: 420, child: _ExitoExportarDialog(correo: widget.correo)),
         );
+      } else {
+        setState(() {
+          _isProcessing = false;
+          _error = AuthService.ultimoError.isEmpty
+              ? 'No se pudo enviar el correo. Intenta de nuevo.'
+              : AuthService.ultimoError;
+        });
       }
     }
   }
@@ -4253,6 +4273,12 @@ class _ExportarDialogState extends State<_ExportarDialog> {
                 ],
               ),
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!,
+                  style: const TextStyle(
+                      fontSize: 12.5, color: Color(0xFFDC2626), height: 1.4)),
+            ],
             const SizedBox(height: 24),
             Wrap(
               spacing: 12,
@@ -4375,7 +4401,7 @@ class _ExitoExportarDialog extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             const Text(
-              'El archivo Excel (.xlsx) ha sido generado. Un enlace para descargarlo ha sido enviado a tu correo registrado:',
+              'El archivo Excel (.xlsx) ha sido generado y enviado como archivo adjunto a tu correo registrado:',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 13, color: Color(0xFF6B7280), height: 1.4),
