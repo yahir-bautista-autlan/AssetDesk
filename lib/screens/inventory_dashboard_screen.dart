@@ -1325,6 +1325,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _DeviceDetailSheet(
         fila: fila,
@@ -2871,6 +2872,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     final activo = _esActivo();
     final esConsumible = widget.nombrePestana == 'Consumibles';
     final acciones = _buildAcciones(esConsumible);
+    final margenInferior = MediaQuery.viewPaddingOf(context).bottom;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.94,
@@ -3066,7 +3068,10 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                         : ListView.builder(
                             controller: scrollController,
                             padding: EdgeInsets.fromLTRB(
-                                16, 12, 16, acciones.isEmpty ? 24 : 100),
+                                16,
+                                12,
+                                16,
+                                (acciones.isEmpty ? 24 : 100) + margenInferior),
                             itemCount: secciones.length,
                             itemBuilder: (context, index) {
                               final seccion = secciones[index];
@@ -3372,7 +3377,8 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      padding: EdgeInsets.fromLTRB(
+          16, 12, 16, 14 + MediaQuery.viewPaddingOf(context).bottom),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: Color(0xFFF0F0F3))),
