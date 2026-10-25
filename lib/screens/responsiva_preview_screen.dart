@@ -14,6 +14,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
+import '../widgets/barra_superior.dart';
 
 class ResponsivaExtraData {
   String marcaEquipoManual;
@@ -1271,7 +1272,12 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => BarraSuperior(
+        color: const Color(0xFF2C1D42),
+        child: _contenido(context),
+      );
+
+  Widget _contenido(BuildContext context) {
     final ancho = MediaQuery.of(context).size.width;
     final esAncha = ancho >= 600;
     final listo = !_renderizando && _errorRender == null && !_cargandoInicial;
@@ -1600,7 +1606,12 @@ class _CompletarDatosResponsivaScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => BarraSuperior(
+        color: _fondo,
+        child: _contenido(context),
+      );
+
+  Widget _contenido(BuildContext context) {
     return Theme(
       data: Theme.of(context).copyWith(
         textSelectionTheme: TextSelectionThemeData(
