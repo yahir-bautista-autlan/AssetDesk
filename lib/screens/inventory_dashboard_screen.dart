@@ -4286,67 +4286,80 @@ class _ExportarDialogState extends State<_ExportarDialog> {
                       fontSize: 12.5, color: Color(0xFFDC2626), height: 1.4)),
             ],
             const SizedBox(height: 24),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              alignment: WrapAlignment.end,
+            Row(
               children: [
-                OutlinedButton(
-                  onPressed:
-                      _isProcessing ? null : () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    side: const BorderSide(color: Color(0xFFE5E7EB)),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 12),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed:
+                        _isProcessing ? null : () => _procesarExcel(true),
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      side: const BorderSide(color: primaryPurple),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 14),
+                    ),
+                    child: _isProcessing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: primaryPurple))
+                        : const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Descargar',
+                                maxLines: 1,
+                                style: TextStyle(
+                                    color: primaryPurple,
+                                    fontWeight: FontWeight.w600)),
+                          ),
                   ),
-                  child: const Text('Cancelar',
-                      style: TextStyle(
-                          color: Colors.black54, fontWeight: FontWeight.w600)),
                 ),
-                OutlinedButton(
-                  onPressed: _isProcessing ? null : () => _procesarExcel(true),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    side: const BorderSide(color: primaryPurple),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 12),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed:
+                        _isProcessing ? null : () => _procesarExcel(false),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryPurple,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 14),
+                    ),
+                    child: _isProcessing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Enviar correo',
+                                maxLines: 1,
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600)),
+                          ),
                   ),
-                  child: _isProcessing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: primaryPurple))
-                      : const Text('Descargar',
-                          style: TextStyle(
-                              color: primaryPurple,
-                              fontWeight: FontWeight.w600)),
-                ),
-                ElevatedButton(
-                  onPressed: _isProcessing ? null : () => _procesarExcel(false),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryPurple,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 12),
-                  ),
-                  child: _isProcessing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : const Text('Enviar correo',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600)),
                 ),
               ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: _isProcessing ? null : () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Text('Cancelar',
+                    style: TextStyle(
+                        color: Colors.black54, fontWeight: FontWeight.w600)),
+              ),
             ),
           ],
         ),
