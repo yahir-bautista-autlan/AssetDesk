@@ -687,7 +687,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     }
     var exceso = (filasTabla.length - 1) * 21.0 +
             (lineasOtros > 1 ? (lineasOtros - 1) * 13.8 + 7 : 0) -
-            63;
+            91;
     double recortar(double maximo) {
       if (exceso <= 0) return 0;
       final r = exceso < maximo ? exceso : maximo;
@@ -695,7 +695,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
       return r;
     }
 
-    final espacio1 = 50.5 - recortar(34.5);
+    final espacio1 = 22.0 - recortar(8);
     final espacio2 = 20 - recortar(6);
     final espacio3 = 20.5 - recortar(6.5);
 
