@@ -13,6 +13,7 @@ import 'screens/inventory_menu_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  if (kIsWeb) SystemNavigator.selectSingleEntryHistory();
   runApp(const AssetDeskApp());
 }
 

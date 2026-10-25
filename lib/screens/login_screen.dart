@@ -315,7 +315,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-class _AjusteSinScroll extends StatelessWidget {
+class _AjusteSinScroll extends StatefulWidget {
   final Widget child;
   final double maxWidth;
   final double padding;
@@ -327,14 +327,33 @@ class _AjusteSinScroll extends StatelessWidget {
   });
 
   @override
+  State<_AjusteSinScroll> createState() => _AjusteSinScrollState();
+}
+
+class _AjusteSinScrollState extends State<_AjusteSinScroll> {
+  double _anchoBase = 0;
+  double _altoBase = 0;
+
+  @override
   Widget build(BuildContext context) {
-    final tecladoVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    final insetTeclado = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        if ((constraints.maxWidth - _anchoBase).abs() > 1) {
+          _anchoBase = constraints.maxWidth;
+          _altoBase = constraints.maxHeight;
+        } else if (constraints.maxHeight > _altoBase) {
+          _altoBase = constraints.maxHeight;
+        }
+
+        final tecladoVisible =
+            insetTeclado || constraints.maxHeight < _altoBase * 0.82;
+
+        final padding = widget.padding;
         final disponible = constraints.maxWidth - padding * 2;
-        final ancho = disponible < maxWidth ? disponible : maxWidth;
-        final contenido = SizedBox(width: ancho, child: child);
+        final ancho = disponible < widget.maxWidth ? disponible : widget.maxWidth;
+        final contenido = SizedBox(width: ancho, child: widget.child);
 
         if (tecladoVisible) {
           return SingleChildScrollView(
