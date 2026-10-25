@@ -1,8 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/inventory_model.dart';
 import '../services/auth_service.dart';
-import '../widgets/inventario_imagen.dart';
 import 'inventory_dashboard_screen.dart';
 
 class InventoryMenuScreen extends StatefulWidget {
@@ -63,9 +64,16 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
     ),
   ];
 
+  Future<Uint8List?>? _futuroLogo;
+
   @override
   void initState() {
     super.initState();
+    final inv = widget.inventario;
+    if (inv.logoId.isNotEmpty) {
+      _futuroLogo =
+          AuthService.obtenerImagenInventario(inv.id, 'logo', inv.logoId);
+    }
     AuthService.guardarSitio(widget.inventario.id, -1);
     AuthService.precargarInventario(widget.inventario.spreadsheetId);
     if (widget.restaurarDashboard) {
@@ -105,12 +113,33 @@ class _InventoryMenuScreenState extends State<InventoryMenuScreen> {
           const Icon(Icons.inventory_2_outlined, size: 40, color: _morado),
     );
     if (inv.logoId.isEmpty) return respaldo;
-    return InventarioImagen(
-      inventarioId: inv.id,
-      tipo: 'logo',
-      fileId: inv.logoId,
-      fit: BoxFit.contain,
-      fallback: respaldo,
+    return FutureBuilder<Uint8List?>(
+      future: _futuroLogo,
+      initialData: AuthService.imagenEnMemoria(inv.logoId),
+      builder: (context, snap) {
+        final bytes = snap.data;
+        final listo = snap.connectionState == ConnectionState.done ||
+            bytes != null;
+        Widget contenido;
+        if (bytes != null) {
+          contenido = Image.memory(
+            bytes,
+            key: const ValueKey('logo'),
+            fit: BoxFit.contain,
+            cacheWidth: 700,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+          );
+        } else if (listo) {
+          contenido = KeyedSubtree(key: const ValueKey('respaldo'), child: respaldo);
+        } else {
+          contenido = const SizedBox.expand(key: ValueKey('cargando'));
+        }
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: contenido,
+        );
+      },
     );
   }
 

@@ -36,6 +36,7 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
   void initState() {
     super.initState();
     _inventarios = List<InventoryModel>.from(widget.inventariosVinculados);
+    AuthService.precargarImagenes(_inventarios);
     AuthService.solicitudesPendientes.addListener(_alCambiarPendientes);
     _cargarUsuario();
     _refrescarInventarios();

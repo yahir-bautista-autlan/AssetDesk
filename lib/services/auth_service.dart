@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart'
     show AppLifecycleState, ValueNotifier, WidgetsBinding;
 import 'package:http/http.dart' as http;
@@ -600,6 +601,54 @@ class AuthService {
     return null;
   }
 
+  static const String _prefijoImg = 'img_';
+  static const String _indiceImg = 'img_indice';
+  static const int _maxImagenesDisco = 6;
+  static const int _maxCharsImagenDisco = 1400000;
+
+  static Future<Uint8List?> _leerImagenDisco(String fileId) async {
+    if (kIsWeb) return null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final b64 = prefs.getString('$_prefijoImg$fileId');
+      if (b64 == null || b64.isEmpty) return null;
+      return base64Decode(b64);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _guardarImagenDisco(String fileId, String b64) async {
+    if (kIsWeb || b64.length > _maxCharsImagenDisco) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final indice = prefs.getStringList(_indiceImg) ?? <String>[];
+      indice.remove(fileId);
+      indice.add(fileId);
+      while (indice.length > _maxImagenesDisco) {
+        final viejo = indice.removeAt(0);
+        await prefs.remove('$_prefijoImg$viejo');
+      }
+      await prefs.setString('$_prefijoImg$fileId', b64);
+      await prefs.setStringList(_indiceImg, indice);
+    } catch (_) {}
+  }
+
+  static Uint8List? imagenEnMemoria(String fileId) => _imgCache[fileId];
+
+  static void precargarImagenes(List<InventoryModel> inventarios) {
+    for (final inv in inventarios) {
+      if (inv.portadaId.isNotEmpty) {
+        obtenerImagenInventario(inv.id, 'portada', inv.portadaId);
+      }
+    }
+    for (final inv in inventarios) {
+      if (inv.logoId.isNotEmpty) {
+        obtenerImagenInventario(inv.id, 'logo', inv.logoId);
+      }
+    }
+  }
+
   static Future<Uint8List?> obtenerImagenInventario(
       String inventarioId, String tipo, String fileId) {
     if (fileId.isEmpty) return Future.value(null);
@@ -608,15 +657,23 @@ class AuthService {
 
     return _imgEnCurso[fileId] ??= () async {
       try {
+        final disco = await _leerImagenDisco(fileId);
+        if (disco != null) {
+          _imgCache[fileId] = disco;
+          return disco;
+        }
+
         final data = await _post({
           'action': 'obtenerImagenInventario',
           'actorEmail': await _actor(),
           'idInventario': inventarioId,
           'tipo': tipo,
-        });
+        }, lectura: true);
         if (_ok(data) && data!['base64'] != null) {
-          final bytes = base64Decode(data['base64'].toString());
+          final b64 = data['base64'].toString();
+          final bytes = base64Decode(b64);
           _imgCache[fileId] = bytes;
+          _guardarImagenDisco(fileId, b64);
           return bytes;
         }
         return null;
@@ -663,6 +720,7 @@ class AuthService {
 
     final raw = (data!['inventarios'] as List? ?? []);
     final lista = raw.map((e) => InventoryModel.fromJson(e)).toList();
+    precargarImagenes(lista);
 
     final u = _usuarioActual;
     if (u != null) {
