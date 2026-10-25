@@ -25,6 +25,40 @@
       background-color: #FFFFFF;
     }
   </style>
+  <script>
+    (function () {
+      var enApp = window.navigator.standalone === true ||
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+      if (!enApp) return;
+
+      var borde = 24;
+      var minimo = 70;
+      var inicio = null;
+
+      document.addEventListener('touchstart', function (e) {
+        var t = e.touches[0];
+        if (e.touches.length === 1 && t.clientX <= borde) {
+          inicio = { x: t.clientX, y: t.clientY };
+          e.preventDefault();
+        } else {
+          inicio = null;
+        }
+      }, { passive: false, capture: true });
+
+      document.addEventListener('touchend', function (e) {
+        if (!inicio) return;
+        var t = e.changedTouches[0];
+        var dx = t.clientX - inicio.x;
+        var dy = Math.abs(t.clientY - inicio.y);
+        inicio = null;
+        if (dx > minimo && dy < dx * 0.6) history.back();
+      }, { passive: true, capture: true });
+
+      document.addEventListener('touchcancel', function () {
+        inicio = null;
+      }, { passive: true, capture: true });
+    })();
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
