@@ -26,23 +26,12 @@
     }
   </style>
   <script>
-    (function () {
-      function aplicar() {
-        var meta = document.querySelector('meta[name="theme-color"]');
-        if (!meta) return;
-        var color = meta.getAttribute('content');
-        if (!color) return;
-        document.documentElement.style.backgroundColor = color;
-        if (document.body) document.body.style.backgroundColor = color;
-      }
-      new MutationObserver(aplicar).observe(document.head, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ['content']
-      });
-      document.addEventListener('DOMContentLoaded', aplicar);
-    })();
+    window.colorBarraSuperior = function (color) {
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', color);
+      document.documentElement.style.backgroundColor = color;
+      if (document.body) document.body.style.backgroundColor = color;
+    };
   </script>
 </head>
 <body>

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+
+import 'barra_stub.dart' if (dart.library.js_interop) 'barra_web.dart';
 
 class BarraSuperior extends StatefulWidget {
   final Color color;
@@ -34,12 +35,8 @@ class _BarraSuperiorState extends State<BarraSuperior> {
   static void _aplicar() {
     if (!kIsWeb) return;
     final color = _pila.isEmpty ? Colors.white : _pila.last;
-    SystemChrome.setApplicationSwitcherDescription(
-      ApplicationSwitcherDescription(
-        label: 'AssetDesk',
-        primaryColor: color.value,
-      ),
-    );
+    final hex = (color.value & 0xFFFFFF).toRadixString(16).padLeft(6, '0');
+    aplicarColorBarra('#$hex');
   }
 
   @override
