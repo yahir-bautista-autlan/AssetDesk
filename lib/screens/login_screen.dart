@@ -353,21 +353,18 @@ class _AjusteSinScrollState extends State<_AjusteSinScroll> {
         final padding = widget.padding;
         final disponible = constraints.maxWidth - padding * 2;
         final ancho = disponible < widget.maxWidth ? disponible : widget.maxWidth;
-        final contenido = SizedBox(width: ancho, child: widget.child);
+        final altoLibre = constraints.maxHeight - 16;
 
-        if (tecladoVisible) {
-          return SingleChildScrollView(
-            padding: EdgeInsets.symmetric(horizontal: padding, vertical: 8),
-            child: Center(child: contenido),
-          );
-        }
-
-        return Padding(
+        return SingleChildScrollView(
           padding: EdgeInsets.symmetric(horizontal: padding, vertical: 8),
-          child: Center(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: contenido,
+          child: SizedBox(
+            width: constraints.maxWidth - padding * 2,
+            height: tecladoVisible ? null : altoLibre,
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: SizedBox(width: ancho, child: widget.child),
+              ),
             ),
           ),
         );
