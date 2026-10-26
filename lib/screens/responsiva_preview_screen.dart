@@ -109,13 +109,20 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
   int _dpiActual = _dpiMin;
   String _direccionPlanta = '';
   String _codigoFormato = '';
+  Map<String, dynamic> _equipo = {};
+  List<Map<String, dynamic>> _impresoras = [];
   static final Map<String, Future<Uint8List?>> _logos = {};
 
   @override
   void initState() {
     super.initState();
+    final esImpresora = widget.nombrePestana == 'Impresoras';
+    _equipo = esImpresora ? <String, dynamic>{} : widget.fila;
+    _impresoras = esImpresora
+        ? <Map<String, dynamic>>[widget.fila]
+        : <Map<String, dynamic>>[];
     _datos = ResponsivaExtraData(
-      incluyeMonitor: _valor('Monitor').isNotEmpty,
+      incluyeMonitor: _valorEq('Monitor').isNotEmpty,
       otrosSoftware: _softwareDesdeFila(),
       nombreRecibe: _valor('Nombre'),
       correoRecibe: '',
@@ -162,9 +169,12 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     final inv = widget.inventario;
     final futuroResponsable =
         inv != null ? AuthService.obtenerResponsableInventario(inv.id) : null;
+    final futuroRelacionados = _cargarRelacionados();
     await _esperarTransicion();
     if (!mounted) return;
     final user = await AuthService.obtenerUsuarioActual();
+    if (!mounted) return;
+    await futuroRelacionados;
     if (!mounted) return;
     Map<String, String>? datosInv;
     try {
@@ -236,6 +246,87 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     return v == null ? '' : v.toString().trim();
   }
 
+  String _valorEq(String key) {
+    final v = _equipo[key];
+    return v == null ? '' : v.toString().trim();
+  }
+
+  String _claveNombre(dynamic v) {
+    if (v == null) return '';
+    return v
+        .toString()
+        .toLowerCase()
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  Future<List<Map<String, dynamic>>> _filasDe(String pestana) async {
+    final ss = widget.inventario?.spreadsheetId ?? '';
+    if (ss.isEmpty) return const [];
+    try {
+      final data = await AuthService.obtenerPestana(ss, pestana);
+      final rows = data?['rows'];
+      if (rows is List) {
+        return [
+          for (final r in rows)
+            if (r is Map) Map<String, dynamic>.from(r),
+        ];
+      }
+    } catch (_) {}
+    return const [];
+  }
+
+  Future<void> _cargarRelacionados() async {
+    final persona = _claveNombre(_valor('Nombre'));
+    if (persona.isEmpty) return;
+
+    final desdeImpresoras = widget.nombrePestana == 'Impresoras';
+    final resultados = await Future.wait([
+      _filasDe('Impresoras'),
+      desdeImpresoras
+          ? _filasDe('Captura')
+          : Future.value(const <Map<String, dynamic>>[]),
+    ]);
+
+    bool delUsuario(Map<String, dynamic> f) =>
+        _claveNombre(f['Nombre']) == persona &&
+        _claveNombre(f['Estatus']) == 'activo';
+
+    final serieActual = _claveNombre(_valor('Numero de Serie'));
+    final impresoras = <Map<String, dynamic>>[
+      if (desdeImpresoras) widget.fila,
+    ];
+    for (final f in resultados[0]) {
+      if (!delUsuario(f)) continue;
+      if (desdeImpresoras &&
+          _claveNombre(f['Numero de Serie']) == serieActual) {
+        continue;
+      }
+      impresoras.add(f);
+    }
+
+    var equipo = _equipo;
+    if (desdeImpresoras) {
+      equipo = <String, dynamic>{};
+      for (final f in resultados[1]) {
+        if (delUsuario(f)) {
+          equipo = f;
+          break;
+        }
+      }
+    }
+
+    _equipo = equipo;
+    _impresoras = impresoras;
+    _datos.incluyeMonitor = _valorEq('Monitor').isNotEmpty;
+    _datos.otrosSoftware = _softwareDesdeFila();
+  }
+
   String _na(String v) => v.trim().isEmpty ? 'N/A' : v.trim();
 
   String _snKeyPara(String pestana) {
@@ -243,14 +334,23 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
   }
 
   String get _nombreArchivo {
-    final sn = _valor(_snKeyPara(widget.nombrePestana));
+    final snKey = _snKeyPara(widget.nombrePestana);
+    var sn = _valorEq(snKey);
+    if (sn.isEmpty && _impresoras.isNotEmpty) {
+      sn = _impresoras.first[snKey]?.toString().trim() ?? '';
+    }
     return 'Responsiva_${sn.isNotEmpty ? sn : 'AXO'}.pdf';
   }
 
   (String marca, String modelo) _separarMarcaModelo() {
-    final modeloCompleto = _valor('Modelo');
-    if (_datos.marcaEquipoManual.isNotEmpty) {
-      return (_datos.marcaEquipoManual, modeloCompleto);
+    return _partirMarcaModelo(_valorEq('Modelo'),
+        manual: _datos.marcaEquipoManual);
+  }
+
+  (String marca, String modelo) _partirMarcaModelo(String modeloCompleto,
+      {String manual = ''}) {
+    if (manual.isNotEmpty) {
+      return (manual, modeloCompleto);
     }
     if (modeloCompleto.isEmpty) return ('', '');
 
@@ -263,7 +363,7 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
   }
 
   (String marca, String modelo) _separarMonitor() {
-    final completo = _valor('Monitor');
+    final completo = _valorEq('Monitor');
     final partes =
         completo.isEmpty ? <String>[] : completo.split(RegExp(r'\s+'));
     final marcaManual = _datos.marcaMonitor.trim();
@@ -304,8 +404,8 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     ];
     final partes = <String>[];
     for (final p in pares) {
-      final producto = _valor(p[0]);
-      final licencia = _valor(p[1]);
+      final producto = _valorEq(p[0]);
+      final licencia = _valorEq(p[1]);
       if (producto.isNotEmpty && licencia.isNotEmpty) {
         partes.add('$producto ($licencia)');
       } else if (producto.isNotEmpty) {
@@ -329,7 +429,8 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
       MaterialPageRoute(
         builder: (_) => _CompletarDatosResponsivaScreen(
           datosIniciales: _datos.copy(),
-          mostrarMonitor: _valor('Monitor').isNotEmpty,
+          mostrarMonitor: _valorEq('Monitor').isNotEmpty,
+          hayEquipo: _equipo.isNotEmpty,
         ),
       ),
     );
@@ -621,9 +722,10 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
     if (logoDatos != null) logo = pw.MemoryImage(logoDatos);
 
     final snKey = _snKeyPara(widget.nombrePestana);
-    final serieEquipo = _valor(snKey);
+    final hayEquipo = _equipo.isNotEmpty;
+    final serieEquipo = _valorEq(snKey);
     final tipoEquipo =
-        _valor('Equipo').isNotEmpty ? _valor('Equipo') : 'Laptop';
+        _valorEq('Equipo').isNotEmpty ? _valorEq('Equipo') : 'Laptop';
     final (marcaEquipo, modeloEquipo) = _separarMarcaModelo();
 
     final nombreEmpresa = _nombreEncabezado();
@@ -632,10 +734,10 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
         '${ahora.day.toString().padLeft(2, '0')}/${ahora.month.toString().padLeft(2, '0')}/${ahora.year}';
 
     final filasTabla = <List<String>>[
-      [tipoEquipo, marcaEquipo, modeloEquipo, serieEquipo],
+      if (hayEquipo) [tipoEquipo, marcaEquipo, modeloEquipo, serieEquipo],
     ];
 
-    if (_datos.incluyeCargador) {
+    if (hayEquipo && _datos.incluyeCargador) {
       filasTabla.add([
         'Cargador',
         _datos.marcaCargador.isNotEmpty ? _datos.marcaCargador : marcaEquipo,
@@ -644,15 +746,28 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
       ]);
     }
 
-    if (_datos.incluyeMonitor) {
+    if (hayEquipo && _datos.incluyeMonitor) {
       final (marcaMon, modeloMon) = _separarMonitor();
       filasTabla.add([
         'Monitor',
         marcaMon,
         modeloMon,
-        _valor('Numero de Serie (2)'),
+        _valorEq('Numero de Serie (2)'),
       ]);
     }
+
+    for (final impresora in _impresoras) {
+      final (marcaImp, modeloImp) =
+          _partirMarcaModelo(impresora['Modelo']?.toString().trim() ?? '');
+      filasTabla.add([
+        'Impresora',
+        marcaImp,
+        modeloImp,
+        impresora[snKey]?.toString().trim() ?? '',
+      ]);
+    }
+
+    if (filasTabla.isEmpty) filasTabla.add(['', '', '', '']);
 
     final pdf = pw.Document();
 
@@ -859,7 +974,8 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
                           pw.Container(height: 1, color: lineaTabla),
                           for (var k = 0; k < filasTabla.length; k++)
                             banda(filaTabla(filasTabla[k]), relleno: k.isEven),
-                          banda(
+                          if (hayEquipo)
+                            banda(
                             pw.Row(
                               crossAxisAlignment: pw.CrossAxisAlignment.start,
                               children: [
@@ -926,9 +1042,13 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
                   pw.Padding(
                     padding: const pw.EdgeInsets.only(left: 47, right: 15.3),
                     child: pw.Text(
-                      'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
-                      'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
-                      'presentar y/o a devolver en el momento en que me sea requerido.',
+                      filasTabla.length > 1
+                          ? 'Reconozco que los equipos arriba mencionados, son herramientas de trabajo y se encuentran en óptimas '
+                              'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y los cuales me comprometo a '
+                              'presentar y/o a devolver en el momento en que me sean requeridos.'
+                          : 'Reconozco que el equipo arriba mencionado, es una herramienta de trabajo y se encuentra en óptimas '
+                              'condiciones de uso para realizar, exclusivamente, actividades propias de la empresa y el cual me comprometo a '
+                              'presentar y/o a devolver en el momento en que me sea requerido.',
                       style: const pw.TextStyle(fontSize: 10.5, lineSpacing: 2.2),
                     ),
                   ),
@@ -1379,10 +1499,12 @@ class _ResponsivaPreviewScreenState extends State<ResponsivaPreviewScreen>
 class _CompletarDatosResponsivaScreen extends StatefulWidget {
   final ResponsivaExtraData datosIniciales;
   final bool mostrarMonitor;
+  final bool hayEquipo;
 
   const _CompletarDatosResponsivaScreen({
     required this.datosIniciales,
     required this.mostrarMonitor,
+    this.hayEquipo = true,
   });
 
   @override
@@ -1441,7 +1563,7 @@ class _CompletarDatosResponsivaScreenState
     final d = widget.datosIniciales;
     final resultado = ResponsivaExtraData(
       marcaEquipoManual: d.marcaEquipoManual,
-      incluyeCargador: _incluyeCargador,
+      incluyeCargador: _incluyeCargador && widget.hayEquipo,
       marcaCargador: _marcaCargador.text.trim(),
       serieCargador: _serieCargador.text.trim(),
       incluyeMonitor: _incluyeMonitor,
@@ -1647,6 +1769,7 @@ class _CompletarDatosResponsivaScreenState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (widget.hayEquipo)
                           _tarjeta(
                             icono: Icons.devices_other_outlined,
                             titulo: 'Accesorios incluidos',
@@ -1684,6 +1807,7 @@ class _CompletarDatosResponsivaScreenState
                                 ),
                             ],
                           ),
+                          if (widget.hayEquipo)
                           _tarjeta(
                             icono: Icons.apps_outlined,
                             titulo: 'Software y licencias',

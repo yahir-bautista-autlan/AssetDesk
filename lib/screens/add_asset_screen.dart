@@ -15,6 +15,7 @@ const Map<String, String> _categoriaCaptura = {
   'Nombre': 'Datos generales',
   'Nombre Lógico del Equipo': 'Datos generales',
   'Ubicación': 'Datos generales',
+  'Unidad': 'Datos generales',
   'Usuario de Dominio': 'Datos generales',
   'Responsable': 'Datos generales',
   'Departamento': 'Datos generales',
@@ -62,6 +63,7 @@ const List<String> _ordenSeccionesCaptura = [
 const Map<String, String> _categoriaImpresoras = {
   'Nombre': 'Datos generales',
   'Ubicación': 'Datos generales',
+  'Unidad': 'Datos generales',
   'Responsable': 'Datos generales',
   'Departamento': 'Datos generales',
   'Estatus': 'Datos generales',
@@ -81,6 +83,7 @@ const List<String> _ordenSeccionesImpresoras = [
 const Map<String, String> _categoriaOtros = {
   'Nombre': 'Datos generales',
   'Ubicación': 'Datos generales',
+  'Unidad': 'Datos generales',
   'Responsable': 'Datos generales',
   'Departamento': 'Datos generales',
   'Estatus': 'Datos generales',
@@ -144,6 +147,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     'Fecha',
     'Responsable',
     'Ubicación',
+    'Unidad',
   };
 
   static const Set<String> _estaticosConsumibles = {
@@ -152,7 +156,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     'Fecha',
     'Responsable',
     'Ubicación',
-    'Numero de Serie',
+    'Unidad',
   };
 
   static const Set<String> _selectBase = {
@@ -187,6 +191,9 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   };
 
   bool get _esConsumibles => widget.nombrePestana == 'Consumibles';
+
+  bool get _generaSerieServidor =>
+      widget.nombrePestana == 'Consumibles' || widget.nombrePestana == 'Otros';
 
   Set<String> get _camposEstaticos =>
       _esConsumibles ? _estaticosConsumibles : _estaticosBase;
@@ -493,10 +500,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     if (header == 'Responsable') {
       return _cargandoUsuario ? 'Cargando...' : _responsable;
     }
-    if (header == 'Numero de Serie') {
-      return _esEdicion ? _snOriginal : '';
-    }
-    if (header == 'Ubicación') {
+    if (header == 'Ubicación' || header == 'Unidad') {
       if (_esEdicion) {
         final existente = widget.existingData?[header]?.toString().trim();
         if (existente != null && existente.isNotEmpty) return existente;
@@ -524,10 +528,16 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   String _obtenerYValidarNumeroDeSerie(Map<String, String> datos) {
     final snKey = _mapaSnKeyGlobal[widget.nombrePestana];
-    if (_esConsumibles) return _esEdicion ? _snOriginal : '';
-    if (snKey == null || !widget.headers.contains(snKey)) return 'NA-00000000';
+    if (snKey == null || !widget.headers.contains(snKey)) {
+      return _generaSerieServidor ? '' : 'NA-00000000';
+    }
 
     String snCapturado = datos[snKey]?.trim() ?? '';
+
+    if (_generaSerieServidor && snCapturado.isEmpty) {
+      if (_esEdicion) datos[snKey] = _snOriginal;
+      return _esEdicion ? _snOriginal : '';
+    }
 
     if (snCapturado.isEmpty) {
       int contador = widget.existingRows.length + 1;
@@ -653,7 +663,9 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             context,
             MaterialPageRoute(
               builder: (_) => QrViewScreen(
-                serialNumber: snFinal,
+                serialNumber: snFinal.isNotEmpty
+                    ? snFinal
+                    : AuthService.ultimaSerieAgregada,
                 nombreActivo: nombreActivo,
                 mostrarDialogoExito: true,
               ),
@@ -961,7 +973,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
-        texto,
+        texto.toLowerCase().trim() == 'unidad' ? 'Ubicación' : texto,
         style: const TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.bold,
@@ -1053,11 +1065,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            valor.isEmpty
-                ? (header == 'Numero de Serie'
-                    ? 'Se genera automáticamente'
-                    : 'Sin definir')
-                : valor,
+            valor.isEmpty ? 'Sin definir' : valor,
             style: const TextStyle(fontSize: 14, color: Color(0xFF8A8A92)),
           ),
         ),

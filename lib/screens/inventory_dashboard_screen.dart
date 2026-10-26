@@ -33,6 +33,9 @@ bool _requiereAprobacionEn(InventoryModel? inv) {
   return !inv.esResponsable(u.correo);
 }
 
+String _etiquetaColumna(String h) =>
+    h.toLowerCase().trim() == 'unidad' ? 'Ubicación' : h;
+
 class _AvisoAprobacion extends StatelessWidget {
   final String responsable;
   final EdgeInsetsGeometry margen;
@@ -125,6 +128,13 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
   final ValueNotifier<String> _snResaltado = ValueNotifier('');
   final ScrollController _hCtrl = ScrollController();
+  final Set<String> _pidiendoPestana = {};
+  final ValueNotifier<int> _versionColumnas = ValueNotifier<int>(0);
+  String _claveColumnas = '';
+  double _offsetColumnas = 0;
+  double _anchoVistaTabla = 0;
+  int _totalColumnas = 0;
+  (int, int) _rangoPrevio = (0, 0);
   final ScrollController _vCtrl = ScrollController();
 
   static final ScrollbarThemeData _temaBarras = ScrollbarThemeData(
@@ -200,8 +210,31 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     WidgetsBinding.instance.addObserver(this);
     AuthService.alEventoPropio = (ev) => _recibirEvento(ev, propio: true);
     AuthService.solicitudesPendientes.addListener(_alCambiarPendientes);
+    _hCtrl.addListener(_alDesplazarHorizontal);
     _cargarUsuario();
     _iniciar();
+  }
+
+  (int, int) _rangoColumnas(double ancho, int total) {
+    var ini = (_offsetColumnas / _colWidth).floor() - 2;
+    var fin = ((_offsetColumnas + ancho) / _colWidth).ceil() + 2;
+    if (ini < 0) ini = 0;
+    if (fin > total) fin = total;
+    if (ini > fin) ini = fin;
+    return (ini, fin);
+  }
+
+  void _alDesplazarHorizontal() {
+    if (_totalColumnas == 0 ||
+        !_hCtrl.hasClients ||
+        _hCtrl.positions.length != 1) {
+      return;
+    }
+    _offsetColumnas = _hCtrl.offset;
+    final r = _rangoColumnas(_anchoVistaTabla, _totalColumnas);
+    if (r == _rangoPrevio) return;
+    _rangoPrevio = r;
+    _versionColumnas.value++;
   }
 
   void _alCambiarPendientes() {
@@ -537,6 +570,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     _timerSync?.cancel();
     AuthService.alEventoPropio = null;
     _timerResalte?.cancel();
+    _hCtrl.removeListener(_alDesplazarHorizontal);
+    _versionColumnas.dispose();
     _hCtrl.dispose();
     _vCtrl.dispose();
     _snResaltado.dispose();
@@ -1017,19 +1052,18 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
         ..addAll(orden);
     }
 
-    final futuros = {
-      for (final t in orden) t: AuthService.obtenerPestana(id, t, forzar: forzar)
-    };
-
     var huboError = false;
 
     Future<void> recibir(String t) async {
-      final raw = await futuros[t]!;
+      final raw = await AuthService.obtenerPestana(id, t, forzar: forzar);
       if (!mounted || generacion != _generacionCarga) return;
       _pestanasEnCarga.remove(t);
       if (raw == null) {
         huboError = true;
-      } else {
+      } else if (silencioso ||
+          forzar ||
+          t == prioritaria ||
+          !_datosHojas.containsKey(t)) {
         _aplicarPestana(t, raw, conservar: silencioso);
       }
       if (!silencioso && t == prioritaria) {
@@ -1039,7 +1073,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
       }
     }
 
-    await Future.wait(orden.map(recibir));
+    await recibir(prioritaria);
     if (!mounted || generacion != _generacionCarga) return;
 
     if (_isLoading) setState(() => _isLoading = false);
@@ -1050,23 +1084,33 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
       _asegurarBajasCargadas(_tabs[_tabIndex.value]);
     }
 
+    await Future.wait(orden.skip(1).map(recibir));
+    if (!mounted || generacion != _generacionCarga) return;
+
     if (huboError) _avisarErrorCarga();
   }
 
   Future<void> _asegurarPestana(String pestana) async {
-    if (_datosHojas.containsKey(pestana) || _pestanasEnCarga.contains(pestana)) {
+    if (_datosHojas.containsKey(pestana) || _pidiendoPestana.contains(pestana)) {
       return;
     }
-    _pestanasEnCarga.add(pestana);
-    if (mounted) setState(() {});
+    _pidiendoPestana.add(pestana);
+    final yaMarcada = _pestanasEnCarga.contains(pestana);
+    if (!yaMarcada) {
+      _pestanasEnCarga.add(pestana);
+      if (mounted) setState(() {});
+    }
 
     final raw = await AuthService.obtenerPestana(
         _inventarioActivo?.spreadsheetId ?? '', pestana);
+    _pidiendoPestana.remove(pestana);
     if (!mounted) return;
 
     _pestanasEnCarga.remove(pestana);
     if (raw != null) {
-      _aplicarPestana(pestana, raw, conservar: false);
+      if (!_datosHojas.containsKey(pestana)) {
+        _aplicarPestana(pestana, raw, conservar: false);
+      }
     } else {
       _avisarErrorCarga();
     }
@@ -1199,7 +1243,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
                             activeColor: primaryPurple,
                             checkboxShape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(6)),
-                            title: Text(header,
+                            title: Text(_etiquetaColumna(header),
                                 style: const TextStyle(
                                     fontSize: 14, color: Colors.black87)),
                             value: isChecked,
@@ -1392,7 +1436,12 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
                     child: RepaintBoundary(
                       child: AnimatedBuilder(
                         animation: _tableListenable,
-                        builder: (context, _) => _buildTableArea(),
+                        builder: (context, _) => Column(
+                          children: [
+                            _buildContador(),
+                            Expanded(child: _buildTableArea()),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1933,6 +1982,47 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     );
   }
 
+  Widget _buildContador() {
+    if (_isLoading) return const SizedBox.shrink();
+    final nombrePestana = _tabs[_tabIndex.value];
+    final dataKey = _dataKeyFor(nombrePestana, _filtroEstado.value);
+    if (!_datosHojas.containsKey(dataKey)) return const SizedBox.shrink();
+
+    final (headers, filas) = _obtenerDatosVisibles();
+    if (headers.isEmpty) return const SizedBox.shrink();
+
+    final total = filas.length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '$total',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: primaryPurple,
+              ),
+            ),
+            TextSpan(
+              text: total == 1 ? ' elemento' : ' elementos',
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTableArea() {
     final index = _tabIndex.value;
     final nombrePestana = _tabs[index];
@@ -2006,7 +2096,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            h,
+                            _etiquetaColumna(h),
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
@@ -2030,6 +2120,15 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
             final anchoTabla = tableWidth < constraints.maxWidth
                 ? constraints.maxWidth
                 : tableWidth;
+            _anchoVistaTabla = constraints.maxWidth;
+            _totalColumnas = headers.length;
+            if (_claveColumnas != claveVista) {
+              _claveColumnas = claveVista;
+              _offsetColumnas = 0;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _alDesplazarHorizontal();
+              });
+            }
 
             if (filteredRows.isEmpty) {
               return SingleChildScrollView(
@@ -2075,7 +2174,13 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
                       children: [
                         cabecera(),
                         Expanded(
-                          child: ListView.builder(
+                          child: ValueListenableBuilder<int>(
+                            valueListenable: _versionColumnas,
+                            builder: (context, _, __) {
+                              final (ini, fin) = _rangoColumnas(
+                                  constraints.maxWidth, headers.length);
+                              _rangoPrevio = (ini, fin);
+                              return ListView.builder(
                             key: ValueKey('v_$claveVista'),
                             controller: _vCtrl,
                             itemCount: filteredRows.length,
@@ -2101,34 +2206,41 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
                                     esBaja: filtro == 'Bajas',
                                   ),
                                   child: Container(
-                                    decoration: esResaltada
+                                    decoration: _bordeFila,
+                                    foregroundDecoration: esResaltada
                                         ? const BoxDecoration(
                                             border: Border(
                                               left: BorderSide(
                                                   color: primaryPurple,
                                                   width: 4),
-                                              bottom: BorderSide(
-                                                  color: Color(0xFFF3F4F6),
-                                                  width: 1),
                                             ),
                                           )
-                                        : _bordeFila,
+                                        : null,
                                     child: Row(
-                                      children: List.generate(headers.length, (c) {
-                                        final h = headers[c];
-                                        final valor = map[h]?.toString() ?? '';
-                                        return SizedBox(
-                                          width: _colWidth,
-                                          child: Padding(
-                                            padding: _paddingCelda,
-                                            child: _buildCellContent(
-                                                h, valor, esEstatus[c]),
+                                      children: [
+                                        SizedBox(
+                                          key: const ValueKey('espacio'),
+                                          width: ini * _colWidth,
+                                        ),
+                                        for (var c = ini; c < fin; c++)
+                                          SizedBox(
+                                            key: ValueKey(c),
+                                            width: _colWidth,
+                                            child: Padding(
+                                              padding: _paddingCelda,
+                                              child: _buildCellContent(
+                                                  headers[c],
+                                                  map[headers[c]]?.toString() ??
+                                                      '',
+                                                  esEstatus[c]),
+                                            ),
                                           ),
-                                        );
-                                      }, growable: false),
+                                      ],
                                     ),
                                   ),
                                 ),
+                              );
+                            },
                               );
                             },
                           ),
@@ -2738,6 +2850,24 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
       text: _valor('Departamento'),
     );
     bool guardandoAsignacion = false;
+    String? errorDepto;
+
+    final vistos = <String, String>{};
+    void agregarDepto(String crudo) {
+      final limpio = crudo.trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (limpio.isEmpty) return;
+      vistos.putIfAbsent(limpio.toLowerCase(), () => limpio);
+    }
+
+    for (final fila in widget.existingRows) {
+      if (fila is Map) agregarDepto(fila['Departamento']?.toString() ?? '');
+    }
+    agregarDepto(_valor('Departamento'));
+    final opcionesDepto = vistos.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final actualDepto = vistos[
+        deptoController.text.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase()];
+    if (actualDepto != null) deptoController.text = actualDepto;
 
     await showDialog(
       context: context,
@@ -2759,12 +2889,15 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                       margen: const EdgeInsets.only(top: 14),
                     ),
                   const SizedBox(height: 16),
-                  TextField(
-                    controller: deptoController,
-                    decoration: InputDecoration(
-                      labelText: 'Departamento destino',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
+                  _SelectorDepartamento(
+                    controlador: deptoController,
+                    opciones: opcionesDepto,
+                    error: errorDepto,
+                    alEditar: () {
+                      if (errorDepto != null) {
+                        setStateDialog(() => errorDepto = null);
+                      }
+                    },
                   ),
                 ],
               ),
@@ -2778,8 +2911,17 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                   onPressed: guardandoAsignacion
                       ? null
                       : () async {
+                          final escrito = deptoController.text
+                              .trim()
+                              .replaceAll(RegExp(r'\s+'), ' ');
+                          if (escrito.isEmpty) {
+                            setStateDialog(() =>
+                                errorDepto = 'Elige o escribe un departamento');
+                            return;
+                          }
                           setStateDialog(() => guardandoAsignacion = true);
-                          final nuevoDepto = deptoController.text.trim();
+                          final nuevoDepto =
+                              vistos[escrito.toLowerCase()] ?? escrito;
 
                           final datosActualizados = Map<String, String>.from(
                             widget.fila.map((k, v) => MapEntry(k, v.toString())),
@@ -2928,7 +3070,8 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                           ),
                           const SizedBox(width: 8),
                         ],
-                        if (!esConsumible) ...[
+                        if (widget.nombrePestana == 'Captura' ||
+                            widget.nombrePestana == 'Impresoras') ...[
                           _chipAccion(
                             icono: Icons.description_outlined,
                             texto: 'Responsiva',
@@ -4364,6 +4507,118 @@ class _ExportarDialogState extends State<_ExportarDialog> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SelectorDepartamento extends StatefulWidget {
+  final TextEditingController controlador;
+  final List<String> opciones;
+  final String? error;
+  final VoidCallback alEditar;
+
+  const _SelectorDepartamento({
+    required this.controlador,
+    required this.opciones,
+    required this.error,
+    required this.alEditar,
+  });
+
+  @override
+  State<_SelectorDepartamento> createState() => _SelectorDepartamentoState();
+}
+
+class _SelectorDepartamentoState extends State<_SelectorDepartamento> {
+  static const String _otro = '__otro__';
+  static const Color _morado = Color(0xFF532E7C);
+
+  late bool _escribiendo;
+  String? _elegido;
+
+  @override
+  void initState() {
+    super.initState();
+    final actual = widget.controlador.text.trim();
+    _elegido = widget.opciones.contains(actual) ? actual : null;
+    _escribiendo = widget.opciones.isEmpty ||
+        (actual.isNotEmpty && _elegido == null);
+  }
+
+  InputDecoration _decoracion({Widget? sufijo}) {
+    return InputDecoration(
+      labelText: 'Departamento destino',
+      errorText: widget.error,
+      suffixIcon: sufijo,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_escribiendo) {
+      return TextField(
+        controller: widget.controlador,
+        autofocus: widget.opciones.isNotEmpty,
+        textCapitalization: TextCapitalization.sentences,
+        onChanged: (_) => widget.alEditar(),
+        decoration: _decoracion(
+          sufijo: widget.opciones.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Ver lista',
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  onPressed: () {
+                    setState(() {
+                      _escribiendo = false;
+                      _elegido = null;
+                      widget.controlador.clear();
+                    });
+                    widget.alEditar();
+                  },
+                ),
+        ),
+      );
+    }
+
+    return DropdownButtonFormField<String>(
+      value: _elegido,
+      isExpanded: true,
+      menuMaxHeight: 320,
+      borderRadius: BorderRadius.circular(14),
+      decoration: _decoracion(),
+      hint: const Text('Elige un departamento'),
+      items: [
+        for (final o in widget.opciones)
+          DropdownMenuItem<String>(
+            value: o,
+            child: Text(o, overflow: TextOverflow.ellipsis),
+          ),
+        const DropdownMenuItem<String>(
+          value: _otro,
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined, size: 18, color: _morado),
+              SizedBox(width: 10),
+              Text('Otro…',
+                  style: TextStyle(
+                      color: _morado, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        if (v == _otro) {
+          setState(() {
+            _escribiendo = true;
+            widget.controlador.clear();
+          });
+        } else {
+          setState(() => _elegido = v);
+          widget.controlador.text = v;
+        }
+        widget.alEditar();
+      },
     );
   }
 }

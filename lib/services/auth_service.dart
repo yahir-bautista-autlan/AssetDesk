@@ -29,6 +29,7 @@ class AuthService {
   static String ultimoError = '';
   static String ultimoMensaje = '';
   static bool ultimaRespuestaPendiente = false;
+  static String ultimaSerieAgregada = '';
   static void Function(Map<String, dynamic> evento)? alEventoPropio;
 
   static final ValueNotifier<int> solicitudesPendientes = ValueNotifier<int>(0);
@@ -507,9 +508,11 @@ class AuthService {
       {String primera = 'Captura'}) {
     if (spreadsheetIdOrUrl.isEmpty) return;
     const todas = ['Captura', 'Impresoras', 'Otros', 'Consumibles'];
-    for (final p in [primera, ...todas.where((t) => t != primera)]) {
-      obtenerPestana(spreadsheetIdOrUrl, p);
-    }
+    obtenerPestana(spreadsheetIdOrUrl, primera).whenComplete(() {
+      for (final p in todas.where((t) => t != primera)) {
+        obtenerPestana(spreadsheetIdOrUrl, p);
+      }
+    });
   }
 
   static Future<Map<String, dynamic>?> obtenerCambios(
@@ -885,7 +888,11 @@ class AuthService {
       'pestana': pestana,
       'datos': datos,
     });
-    if (_ok(data)) _invalidarCache();
+    ultimaSerieAgregada = '';
+    if (_ok(data)) {
+      _invalidarCache();
+      ultimaSerieAgregada = (data!['serie'] ?? '').toString();
+    }
     return _ok(data);
   }
 
