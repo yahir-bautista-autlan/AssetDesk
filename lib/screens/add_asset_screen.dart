@@ -138,7 +138,7 @@ class AddAssetScreen extends StatefulWidget {
 class _AddAssetScreenState extends State<AddAssetScreen> {
   static const primaryPurple = Color(0xFF532E7C);
 
-  static const Set<String> _camposEstaticos = {
+  static const Set<String> _estaticosBase = {
     'Fecha/Hora',
     'FechaRegistro',
     'Fecha',
@@ -146,7 +146,16 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     'Ubicación',
   };
 
-  static const Set<String> _camposSelect = {
+  static const Set<String> _estaticosConsumibles = {
+    'Fecha/Hora',
+    'FechaRegistro',
+    'Fecha',
+    'Responsable',
+    'Ubicación',
+    'Numero de Serie',
+  };
+
+  static const Set<String> _selectBase = {
     'Equipo',
     'Disco Duro',
     'Memoria',
@@ -157,11 +166,40 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     'Tipo',
   };
 
+  static const Set<String> _selectConsumibles = {
+    'Impresora',
+    'Modelo',
+    'Color',
+    'Tipo',
+    'Departamento',
+    'Proveedor',
+    'Comentarios',
+    'Estatus',
+  };
+
+  static const Set<String> _selectOpcionales = {'Comentarios', 'Proveedor'};
+
+  static const Set<String> _selectSinPreseleccion = {
+    'Impresora',
+    'Modelo',
+    'Proveedor',
+    'Comentarios',
+  };
+
+  bool get _esConsumibles => widget.nombrePestana == 'Consumibles';
+
+  Set<String> get _camposEstaticos =>
+      _esConsumibles ? _estaticosConsumibles : _estaticosBase;
+
+  Set<String> get _camposSelect =>
+      _esConsumibles ? _selectConsumibles : _selectBase;
+
   static const Set<String> _camposTamano = {'Disco Duro', 'Memoria'};
 
-  static const Set<String> _camposFemeninos = {'Memoria'};
+  static const Set<String> _camposFemeninos = {'Memoria', 'Impresora'};
 
   String _frase(String header, {required bool nuevo}) {
+    if (header == 'Comentarios') return 'Escribe un comentario';
     final femenino = _camposFemeninos.contains(header);
     final articulo = femenino ? 'la' : 'el';
     final adjetivo = nuevo ? (femenino ? ' nueva' : ' nuevo') : '';
@@ -364,7 +402,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         String? seleccionado;
         if (valorExistente.isNotEmpty) {
           seleccionado = vistos[_claveComparacion(valorExistente)];
-        } else if (combinadas.isNotEmpty) {
+        } else if (combinadas.isNotEmpty &&
+            !(_esConsumibles && _selectSinPreseleccion.contains(header))) {
           seleccionado = combinadas.first;
         }
 
@@ -454,6 +493,9 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     if (header == 'Responsable') {
       return _cargandoUsuario ? 'Cargando...' : _responsable;
     }
+    if (header == 'Numero de Serie') {
+      return _esEdicion ? _snOriginal : '';
+    }
     if (header == 'Ubicación') {
       if (_esEdicion) {
         final existente = widget.existingData?[header]?.toString().trim();
@@ -482,6 +524,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   String _obtenerYValidarNumeroDeSerie(Map<String, String> datos) {
     final snKey = _mapaSnKeyGlobal[widget.nombrePestana];
+    if (_esConsumibles) return _esEdicion ? _snOriginal : '';
     if (snKey == null || !widget.headers.contains(snKey)) return 'NA-00000000';
 
     String snCapturado = datos[snKey]?.trim() ?? '';
@@ -529,6 +572,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
     for (final header in _camposSelect) {
       if (!widget.headers.contains(header)) continue;
+      if (_esConsumibles && _selectOpcionales.contains(header)) continue;
       final texto = _otroControllers[header]?.text.trim() ?? '';
       if (texto.isEmpty) {
         _erroresSelect[header] = 'Escribe o elige un valor';
@@ -636,6 +680,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   String get _textoBoton {
     if (_requiereAprobacion) return 'ENVIAR PARA APROBACIÓN';
+    if (_esConsumibles) return _esEdicion ? 'GUARDAR CAMBIOS' : 'GUARDAR';
     return _esEdicion ? 'GUARDAR CAMBIOS' : 'GUARDAR Y GENERAR QR';
   }
 
@@ -1008,7 +1053,11 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            valor.isEmpty ? 'Sin definir' : valor,
+            valor.isEmpty
+                ? (header == 'Numero de Serie'
+                    ? 'Se genera automáticamente'
+                    : 'Sin definir')
+                : valor,
             style: const TextStyle(fontSize: 14, color: Color(0xFF8A8A92)),
           ),
         ),

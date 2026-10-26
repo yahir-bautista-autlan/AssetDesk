@@ -3038,7 +3038,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             ],
                           ),
                         ),
-                        if (_valor(_config.snKey).isNotEmpty && !esConsumible) ...[
+                        if (_valor(_config.snKey).isNotEmpty) ...[
                           const SizedBox(width: 10),
                           Flexible(
                             child: Text(
