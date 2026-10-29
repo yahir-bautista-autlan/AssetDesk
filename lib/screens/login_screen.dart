@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
@@ -100,6 +102,28 @@ class _LoginScreenState extends State<LoginScreen> {
       });
       _mostrarMensaje(
         'Cuenta activada. Ya puedes iniciar sesión con tu nueva contraseña.',
+        color: Colors.green,
+      );
+    }
+  }
+
+  Future<void> _abrirRecuperacion() async {
+    final correoRestablecido = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _RecuperarScreen(
+          correoInicial: _emailController.text.trim(),
+        ),
+      ),
+    );
+
+    if (correoRestablecido != null && mounted) {
+      setState(() {
+        _emailController.text = correoRestablecido;
+        _passwordController.clear();
+      });
+      _mostrarMensaje(
+        'Contraseña actualizada. Ya puedes iniciar sesión con tu nueva contraseña.',
         color: Colors.green,
       );
     }
@@ -236,7 +260,30 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ExcludeFocus(
+                          child: TextButton(
+                            onPressed: _isLoading ? null : _abrirRecuperacion,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 8),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: const Text(
+                              'Olvidé mi contraseña',
+                              style: TextStyle(
+                                color: primaryPurple,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       ExcludeFocus(
                         child: Opacity(
                         opacity: _isLoading ? 0.7 : 1,
@@ -286,10 +333,28 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       ),
-                      const SizedBox(height: 16),
-                      Center(
-                        child: ExcludeFocus(
-                          child: TextButton.icon(
+                      const SizedBox(height: 22),
+                      Row(
+                        children: const [
+                          Expanded(
+                              child: Divider(
+                                  height: 1, color: Color(0xFFE3DEEE))),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 14),
+                            child: Text(
+                              'o',
+                              style: TextStyle(
+                                  color: Color(0xFF9CA3AF), fontSize: 13),
+                            ),
+                          ),
+                          Expanded(
+                              child: Divider(
+                                  height: 1, color: Color(0xFFE3DEEE))),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      ExcludeFocus(
+                        child: OutlinedButton.icon(
                           onPressed: _isLoading ? null : _abrirInvitacion,
                           icon: const Icon(Icons.mark_email_read_outlined,
                               size: 18, color: primaryPurple),
@@ -301,7 +366,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontSize: 14,
                             ),
                           ),
-                        ),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(46),
+                            side: const BorderSide(color: Color(0xFFD9CCEA)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -1066,6 +1137,925 @@ class _InvitacionScreenState extends State<_InvitacionScreen> {
                             const SizedBox(height: 8),
                           ],
                     ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecuperarScreen extends StatefulWidget {
+  final String correoInicial;
+
+  const _RecuperarScreen({this.correoInicial = ''});
+
+  @override
+  State<_RecuperarScreen> createState() => _RecuperarScreenState();
+}
+
+class _RecuperarScreenState extends State<_RecuperarScreen> {
+  static const primaryPurple = Color(0xFF4A2574);
+  static const _titulo = Color(0xFF1E1B4B);
+  static const _texto = Color(0xFF6B7280);
+  static const _tenue = Color(0xFF8B83A3);
+  static const _bordeCampo = Color(0xFFE3DEEE);
+  static const _fondoCampo = Color(0xFFFAF8FD);
+  static const _fondoIcono = Color(0xFFEDE7F6);
+  static const _verde = Color(0xFF16A34A);
+  static const int _esperaReenvio = 60;
+
+  final _formCorreo = GlobalKey<FormState>();
+  final _formRestablecer = GlobalKey<FormState>();
+  late final TextEditingController _correoCtrl;
+  final _codigoCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+
+  int _paso = 1;
+  bool _isLoading = false;
+  bool _obscurePass = true;
+  bool _obscureConfirm = true;
+  String? _error;
+  String? _aviso;
+  int _segundosReenvio = 0;
+  Timer? _timerReenvio;
+
+  static final _regexCorreo = RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,}$');
+
+  @override
+  void initState() {
+    super.initState();
+    _correoCtrl = TextEditingController(text: widget.correoInicial);
+    _passCtrl.addListener(_actualizar);
+    _confirmCtrl.addListener(_actualizar);
+  }
+
+  void _actualizar() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _timerReenvio?.cancel();
+    _correoCtrl.dispose();
+    _codigoCtrl.dispose();
+    _passCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  String get _subtituloPaso => _paso == 1
+      ? 'Te enviaremos un código para que crees una nueva contraseña.'
+      : 'Ingresa el código que recibiste y elige tu nueva contraseña.';
+
+  int _fuerzaPassword(String p) {
+    var puntos = 0;
+    if (p.length >= 8) puntos++;
+    if (p.length >= 12) puntos++;
+    if (RegExp(r'[A-Za-z]').hasMatch(p) && RegExp(r'\d').hasMatch(p)) puntos++;
+    if (RegExp(r'[A-Z]').hasMatch(p) && RegExp(r'[a-z]').hasMatch(p)) puntos++;
+    if (RegExp(r'[^A-Za-z0-9]').hasMatch(p)) puntos++;
+    return puntos;
+  }
+
+  String? _validarPassword(String? v) {
+    final p = v ?? '';
+    if (p.isEmpty) return 'Elige una contraseña';
+    if (p.length < 8) return 'Mínimo 8 caracteres';
+    if (!RegExp(r'[A-Za-z]').hasMatch(p) || !RegExp(r'\d').hasMatch(p)) {
+      return 'Debe incluir al menos una letra y un número';
+    }
+    return null;
+  }
+
+  void _iniciarEspera() {
+    _timerReenvio?.cancel();
+    setState(() => _segundosReenvio = _esperaReenvio);
+    _timerReenvio = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      if (_segundosReenvio <= 1) {
+        t.cancel();
+        setState(() => _segundosReenvio = 0);
+      } else {
+        setState(() => _segundosReenvio--);
+      }
+    });
+  }
+
+  void _irAPaso(int paso) {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _paso = paso;
+      _error = null;
+      _aviso = null;
+    });
+  }
+
+  void _atras() {
+    if (_isLoading) return;
+    if (_paso > 1) {
+      _irAPaso(_paso - 1);
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  Future<void> _enviarCodigo({bool reenvio = false}) async {
+    if (!reenvio && !_formCorreo.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _aviso = null;
+    });
+
+    final exito =
+        await AuthService.solicitarRecuperacion(_correoCtrl.text.trim());
+
+    if (!mounted) return;
+
+    if (!exito) {
+      setState(() {
+        _isLoading = false;
+        _error = AuthService.ultimoError.isEmpty
+            ? 'No se pudo enviar el código. Intenta de nuevo.'
+            : AuthService.ultimoError;
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = false;
+      _paso = 2;
+      _aviso = reenvio ? 'Te enviamos un nuevo código.' : null;
+      _codigoCtrl.clear();
+    });
+    _iniciarEspera();
+  }
+
+  Future<void> _restablecer() async {
+    if (!_formRestablecer.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    final correo = _correoCtrl.text.trim().toLowerCase();
+    final exito = await AuthService.restablecerPassword(
+      correo: correo,
+      codigo: _codigoCtrl.text.trim(),
+      nuevaPassword: _passCtrl.text,
+    );
+
+    if (!mounted) return;
+
+    if (exito) {
+      TextInput.finishAutofillContext();
+      Navigator.pop(context, correo);
+      return;
+    }
+
+    setState(() {
+      _isLoading = false;
+      _error = AuthService.ultimoError.isEmpty
+          ? 'No se pudo restablecer la contraseña'
+          : AuthService.ultimoError;
+    });
+  }
+
+  OutlineInputBorder _borde(Color color, [double ancho = 1]) {
+    return OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: color, width: ancho),
+    );
+  }
+
+  InputDecoration _decoracion(String hint, IconData? icono, {Widget? suffix}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
+      prefixIcon: icono == null
+          ? null
+          : Icon(icono, size: 20, color: const Color(0xFF6B5B8C)),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: _fondoCampo,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      enabledBorder: _borde(_bordeCampo),
+      border: _borde(_bordeCampo),
+      focusedBorder: _borde(primaryPurple, 1.6),
+      errorBorder: _borde(Colors.redAccent),
+      focusedErrorBorder: _borde(Colors.redAccent, 1.6),
+    );
+  }
+
+  Widget _etiqueta(String texto) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        texto,
+        style: const TextStyle(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w700,
+          color: _titulo,
+        ),
+      ),
+    );
+  }
+
+  Widget _indicadorPaso(int n, String etiqueta) {
+    final hecho = _paso > n;
+    final activo = _paso == n;
+    final marcado = hecho || activo;
+    return SizedBox(
+      width: 92,
+      child: Column(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: marcado ? primaryPurple : Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: marcado ? primaryPurple : const Color(0xFFD9CCEA),
+                width: 1.5,
+              ),
+            ),
+            child: hecho
+                ? const Icon(Icons.check, size: 18, color: Colors.white)
+                : Text(
+                    '$n',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: activo ? Colors.white : _tenue,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            etiqueta,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: activo ? FontWeight.w700 : FontWeight.w500,
+              color: activo ? primaryPurple : _tenue,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pasos() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _indicadorPaso(1, 'Correo'),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 15),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              height: 2,
+              decoration: BoxDecoration(
+                color: _paso > 1 ? primaryPurple : const Color(0xFFD9CCEA),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+        ),
+        _indicadorPaso(2, 'Verificación'),
+      ],
+    );
+  }
+
+  Widget _indicadorFuerza() {
+    final p = _passCtrl.text;
+    if (p.isEmpty) return const SizedBox.shrink();
+
+    final fuerza = _fuerzaPassword(p);
+    Color color;
+    String texto;
+    if (fuerza <= 2) {
+      color = const Color(0xFFDC2626);
+      texto = 'Débil';
+    } else if (fuerza <= 3) {
+      color = const Color(0xFFF59E0B);
+      texto = 'Aceptable';
+    } else {
+      color = _verde;
+      texto = 'Fuerte';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: fuerza / 5,
+                minHeight: 5,
+                backgroundColor: const Color(0xFFE5E7EB),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            texto,
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w600, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chipRequisito(bool cumple, String texto) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: cumple ? const Color(0xFFE8F7EE) : const Color(0xFFF3F1F7),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            cumple ? Icons.check_circle : Icons.radio_button_unchecked,
+            size: 14,
+            color: cumple ? _verde : const Color(0xFF9CA3AF),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            texto,
+            style: TextStyle(
+              fontSize: 12,
+              color: cumple ? _verde : _texto,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pasoCorreo() {
+    return Form(
+      key: _formCorreo,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _etiqueta('Correo electrónico'),
+          TextFormField(
+            controller: _correoCtrl,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.done,
+            autocorrect: false,
+            autofillHints: const [
+              AutofillHints.email,
+              AutofillHints.username,
+            ],
+            style: const TextStyle(fontSize: 15),
+            onFieldSubmitted: (_) {
+              if (!_isLoading) _enviarCodigo();
+            },
+            decoration: _decoracion(
+              'nombre@empresa.com',
+              Icons.mail_outline_rounded,
+            ),
+            validator: (v) {
+              final t = (v ?? '').trim();
+              if (t.isEmpty) return 'Ingresa tu correo';
+              if (!_regexCorreo.hasMatch(t)) {
+                return 'Formato de correo no válido';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Icon(Icons.info_outline_rounded, size: 16, color: _tenue),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Recibirás un código de 6 dígitos. Es válido por 15 minutos.',
+                  style: TextStyle(fontSize: 12.5, color: _texto, height: 1.4),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pasoRestablecer() {
+    final p = _passCtrl.text;
+    final tieneLongitud = p.length >= 8;
+    final tieneLetraNumero =
+        RegExp(r'[A-Za-z]').hasMatch(p) && RegExp(r'\d').hasMatch(p);
+    final coincide = p.isNotEmpty && _confirmCtrl.text == p;
+
+    return Form(
+      key: _formRestablecer,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+            decoration: BoxDecoration(
+              color: _fondoIcono,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.mark_email_read_outlined,
+                    color: primaryPurple, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Si la cuenta existe, enviamos el código a',
+                        style: TextStyle(fontSize: 11.5, color: _texto),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _correoCtrl.text.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _titulo,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: _isLoading ? null : _atras,
+                  child: const Text(
+                    'Cambiar',
+                    style: TextStyle(
+                      color: primaryPurple,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          _etiqueta('Código de verificación'),
+          TextFormField(
+            controller: _codigoCtrl,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            textAlign: TextAlign.center,
+            textInputAction: TextInputAction.next,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 10,
+              color: _titulo,
+            ),
+            decoration: _decoracion('000000', null).copyWith(
+              counterText: '',
+              hintStyle: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 10,
+                color: Color(0xFFD5CFE3),
+              ),
+            ),
+            validator: (v) {
+              if ((v ?? '').trim().length != 6) {
+                return 'El código tiene 6 dígitos';
+              }
+              return null;
+            },
+          ),
+          if (_aviso != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.check_circle, size: 14, color: _verde),
+                const SizedBox(width: 6),
+                Text(
+                  _aviso!,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: _verde,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 22),
+          Row(
+            children: const [
+              Expanded(child: Divider(color: Color(0xFFEDE8F5))),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'NUEVA CONTRASEÑA',
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    color: _tenue,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Expanded(child: Divider(color: Color(0xFFEDE8F5))),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _etiqueta('Contraseña'),
+          TextFormField(
+            controller: _passCtrl,
+            obscureText: _obscurePass,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.newPassword],
+            style: const TextStyle(fontSize: 15),
+            decoration: _decoracion(
+              'Nueva contraseña',
+              Icons.lock_outline_rounded,
+              suffix: ExcludeFocus(
+                child: IconButton(
+                  icon: Icon(
+                    _obscurePass
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 20,
+                    color: const Color(0xFF6B5B8C),
+                  ),
+                  onPressed: () => setState(() => _obscurePass = !_obscurePass),
+                ),
+              ),
+            ),
+            validator: _validarPassword,
+          ),
+          _indicadorFuerza(),
+          const SizedBox(height: 16),
+          _etiqueta('Confirmar contraseña'),
+          TextFormField(
+            controller: _confirmCtrl,
+            obscureText: _obscureConfirm,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.newPassword],
+            style: const TextStyle(fontSize: 15),
+            onFieldSubmitted: (_) {
+              if (!_isLoading) _restablecer();
+            },
+            decoration: _decoracion(
+              'Repite la contraseña',
+              Icons.verified_user_outlined,
+              suffix: ExcludeFocus(
+                child: IconButton(
+                  icon: Icon(
+                    _obscureConfirm
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 20,
+                    color: const Color(0xFF6B5B8C),
+                  ),
+                  onPressed: () =>
+                      setState(() => _obscureConfirm = !_obscureConfirm),
+                ),
+              ),
+            ),
+            validator: (v) {
+              if ((v ?? '').isEmpty) return 'Confirma tu contraseña';
+              if (v != _passCtrl.text) return 'Las contraseñas no coinciden';
+              return null;
+            },
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _chipRequisito(tieneLongitud, 'Mínimo 8 caracteres'),
+              _chipRequisito(tieneLetraNumero, 'Letra y número'),
+              _chipRequisito(coincide, 'Coinciden'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cajaError() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline,
+              color: Color(0xFFDC2626), size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _error!,
+              style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _botonPrincipal() {
+    final esUltimo = _paso == 2;
+    return ExcludeFocus(
+      child: Opacity(
+        opacity: _isLoading ? 0.7 : 1,
+        child: Material(
+          color: Colors.transparent,
+          child: Ink(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF6B3F96), Color(0xFF4A2574)],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: primaryPurple.withOpacity(0.28),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: _isLoading
+                  ? null
+                  : (esUltimo ? _restablecer : () => _enviarCodigo()),
+              child: Container(
+                height: 52,
+                alignment: Alignment.center,
+                child: _isLoading
+                    ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2.5),
+                      )
+                    : Text(
+                        esUltimo ? 'Restablecer contraseña' : 'Enviar código',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _filaReenvio() {
+    final espera = _segundosReenvio > 0;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text(
+          '¿No llegó el código?',
+          style: TextStyle(fontSize: 13, color: _texto),
+        ),
+        ExcludeFocus(
+          child: TextButton(
+            onPressed: (_isLoading || espera)
+                ? null
+                : () => _enviarCodigo(reenvio: true),
+            child: Text(
+              espera ? 'Reenviar en ${_segundosReenvio}s' : 'Reenviar',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: espera ? const Color(0xFF9CA3AF) : primaryPurple,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget contenido = _paso == 1
+        ? KeyedSubtree(key: const ValueKey(1), child: _pasoCorreo())
+        : KeyedSubtree(key: const ValueKey(2), child: _pasoRestablecer());
+
+    return PopScope(
+      canPop: _paso == 1 && !_isLoading,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _atras();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFF1EAF9), Color(0xFFF8F5FC), Colors.white],
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8, top: 4),
+                    child: ExcludeFocus(
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back, color: primaryPurple),
+                        onPressed: _isLoading ? null : _atras,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, restriccion) {
+                      return SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: restriccion.maxHeight - 24,
+                          ),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 440),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Center(
+                                    child: Container(
+                                      width: 68,
+                                      height: 68,
+                                      decoration: BoxDecoration(
+                                        color: _fondoIcono,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                primaryPurple.withOpacity(0.12),
+                                            blurRadius: 16,
+                                            offset: const Offset(0, 6),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Icon(
+                                          Icons.lock_reset_rounded,
+                                          color: primaryPurple,
+                                          size: 32),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  const Text(
+                                    'Recupera tu contraseña',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 25,
+                                      fontWeight: FontWeight.w800,
+                                      color: _titulo,
+                                      letterSpacing: -0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12),
+                                    child: Text(
+                                      _subtituloPaso,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontSize: 13.5,
+                                        color: _texto,
+                                        height: 1.45,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 22),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 24),
+                                    child: _pasos(),
+                                  ),
+                                  const SizedBox(height: 22),
+                                  Container(
+                                    padding: const EdgeInsets.all(20),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(24),
+                                      border: Border.all(
+                                          color: const Color(0xFFF0ECF6)),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: primaryPurple.withOpacity(0.07),
+                                          blurRadius: 28,
+                                          offset: const Offset(0, 10),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        AutofillGroup(
+                                          child: AnimatedSwitcher(
+                                            duration: const Duration(
+                                                milliseconds: 220),
+                                            child: contenido,
+                                          ),
+                                        ),
+                                        if (_error != null) ...[
+                                          const SizedBox(height: 16),
+                                          _cajaError(),
+                                        ],
+                                        const SizedBox(height: 20),
+                                        _botonPrincipal(),
+                                        if (_paso == 2) ...[
+                                          const SizedBox(height: 4),
+                                          _filaReenvio(),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Center(
+                                    child: ExcludeFocus(
+                                      child: TextButton.icon(
+                                        onPressed: _isLoading
+                                            ? null
+                                            : () => Navigator.pop(context),
+                                        icon: const Icon(
+                                            Icons.arrow_back_rounded,
+                                            size: 18,
+                                            color: primaryPurple),
+                                        label: const Text(
+                                          'Volver a iniciar sesión',
+                                          style: TextStyle(
+                                            color: primaryPurple,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],

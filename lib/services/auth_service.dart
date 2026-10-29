@@ -362,6 +362,28 @@ class AuthService {
     return _ok(data);
   }
 
+  static Future<bool> solicitarRecuperacion(String correo) async {
+    final data = await _post({
+      'action': 'solicitarRecuperacion',
+      'correo': correo.trim().toLowerCase(),
+    });
+    return _ok(data);
+  }
+
+  static Future<bool> restablecerPassword({
+    required String correo,
+    required String codigo,
+    required String nuevaPassword,
+  }) async {
+    final data = await _post({
+      'action': 'restablecerPassword',
+      'correo': correo.trim().toLowerCase(),
+      'codigo': codigo.trim(),
+      'nuevaPasswordHash': hashPassword(nuevaPassword),
+    });
+    return _ok(data);
+  }
+
   static Future<bool> actualizarUsuarioAdmin({
     required String correo,
     required String nombre,
