@@ -366,11 +366,13 @@ class _AjusteSinScroll extends StatefulWidget {
   final Widget child;
   final double maxWidth;
   final double padding;
+  final bool alinearArriba;
 
   const _AjusteSinScroll({
     required this.child,
     required this.maxWidth,
     this.padding = 20,
+    this.alinearArriba = false,
   });
 
   @override
@@ -407,9 +409,15 @@ class _AjusteSinScrollState extends State<_AjusteSinScroll> {
           child: SizedBox(
             width: constraints.maxWidth - padding * 2,
             height: tecladoVisible ? null : altoLibre,
-            child: Center(
+            child: Align(
+              alignment: widget.alinearArriba
+                  ? Alignment.topCenter
+                  : Alignment.center,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
+                alignment: widget.alinearArriba
+                    ? Alignment.topCenter
+                    : Alignment.center,
                 child: SizedBox(width: ancho, child: widget.child),
               ),
             ),
@@ -979,6 +987,7 @@ class _InvitacionScreenState extends State<_InvitacionScreen> {
                 Expanded(
                   child: _AjusteSinScroll(
                     maxWidth: 520,
+                    alinearArriba: true,
                     child: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1903,7 +1912,8 @@ class _RecuperarScreenState extends State<_RecuperarScreen> {
                           constraints: BoxConstraints(
                             minHeight: restriccion.maxHeight - 24,
                           ),
-                          child: Center(
+                          child: Align(
+                            alignment: Alignment.topCenter,
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(maxWidth: 440),
                               child: Column(
