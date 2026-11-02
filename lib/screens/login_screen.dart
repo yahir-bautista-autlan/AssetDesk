@@ -136,14 +136,10 @@ class _LoginScreenState extends State<LoginScreen> {
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(0.9, -1.0),
-            radius: 1.2,
-            colors: [Color(0xFFF1EAF7), Colors.white],
-          ),
-        ),
-        child: SafeArea(
+        child: CustomPaint(
+          painter: _FondoLoginPainter(),
+          size: Size.infinite,
+          child: SafeArea(
           child: _AjusteSinScroll(
             maxWidth: 420,
             padding: 28,
@@ -260,7 +256,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 4),
                       Align(
                         alignment: Alignment.centerRight,
                         child: ExcludeFocus(
@@ -268,7 +264,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: _isLoading ? null : _abrirRecuperacion,
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 8),
+                                  horizontal: 4, vertical: 4),
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
@@ -283,7 +279,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                       ExcludeFocus(
                         child: Opacity(
                         opacity: _isLoading ? 0.7 : 1,
@@ -333,28 +329,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       ),
-                      const SizedBox(height: 22),
-                      Row(
-                        children: const [
-                          Expanded(
-                              child: Divider(
-                                  height: 1, color: Color(0xFFE3DEEE))),
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 14),
-                            child: Text(
-                              'o',
-                              style: TextStyle(
-                                  color: Color(0xFF9CA3AF), fontSize: 13),
-                            ),
-                          ),
-                          Expanded(
-                              child: Divider(
-                                  height: 1, color: Color(0xFFE3DEEE))),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      ExcludeFocus(
-                        child: OutlinedButton.icon(
+                      const SizedBox(height: 12),
+                      Center(
+                        child: ExcludeFocus(
+                          child: TextButton.icon(
                           onPressed: _isLoading ? null : _abrirInvitacion,
                           icon: const Icon(Icons.mark_email_read_outlined,
                               size: 18, color: primaryPurple),
@@ -366,13 +344,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontSize: 14,
                             ),
                           ),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(46),
-                            side: const BorderSide(color: Color(0xFFD9CCEA)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
+                        ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -381,9 +353,94 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
           ),
         ),
+        ),
       ),
     );
   }
+}
+
+class _FondoLoginPainter extends CustomPainter {
+  const _FondoLoginPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final lienzo = Rect.fromLTWH(0, 0, w, h);
+    final suavizado = (w < h ? w : h) * 0.045;
+
+    canvas.clipRect(lienzo);
+
+    canvas.drawRect(
+      lienzo,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFFCF9FD), Color(0xFFF9F5FC)],
+        ).createShader(lienzo),
+    );
+
+    void onda(Path ruta, List<Color> colores, double desenfoque) {
+      canvas.drawPath(
+        ruta,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colores,
+          ).createShader(lienzo)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, desenfoque),
+      );
+    }
+
+    onda(
+      Path()
+        ..moveTo(-w * 0.1, -h * 0.05)
+        ..lineTo(w * 1.1, -h * 0.05)
+        ..lineTo(w * 1.1, h * 0.03)
+        ..cubicTo(w * 0.80, h * 0.07, w * 0.45, h * 0.11, w * 0.10, h * 0.23)
+        ..lineTo(-w * 0.1, h * 0.31)
+        ..close(),
+      const [Color(0x2EB79AD9), Color(0x0AB79AD9)],
+      suavizado,
+    );
+
+    onda(
+      Path()
+        ..moveTo(-w * 0.1, -h * 0.05)
+        ..lineTo(w * 0.55, -h * 0.05)
+        ..cubicTo(w * 0.40, h * 0.04, w * 0.20, h * 0.10, -w * 0.1, h * 0.19)
+        ..close(),
+      const [Color(0x2E9A75C4), Color(0x0A9A75C4)],
+      suavizado * 0.8,
+    );
+
+    onda(
+      Path()
+        ..moveTo(-w * 0.1, h * 0.90)
+        ..cubicTo(w * 0.25, h * 0.88, w * 0.60, h * 0.80, w * 1.1, h * 0.75)
+        ..lineTo(w * 1.1, h * 1.05)
+        ..lineTo(-w * 0.1, h * 1.05)
+        ..close(),
+      const [Color(0x0AB79AD9), Color(0x2EA07CC8)],
+      suavizado,
+    );
+
+    onda(
+      Path()
+        ..moveTo(-w * 0.1, h * 0.99)
+        ..cubicTo(w * 0.30, h * 0.97, w * 0.65, h * 0.91, w * 1.1, h * 0.86)
+        ..lineTo(w * 1.1, h * 1.05)
+        ..lineTo(-w * 0.1, h * 1.05)
+        ..close(),
+      const [Color(0x148E63B8), Color(0x338E63B8)],
+      suavizado * 0.8,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _AjusteSinScroll extends StatefulWidget {
