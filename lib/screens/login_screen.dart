@@ -136,10 +136,14 @@ class _LoginScreenState extends State<LoginScreen> {
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        child: CustomPaint(
-          painter: _FondoLoginPainter(),
-          size: Size.infinite,
-          child: SafeArea(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0.9, -1.0),
+            radius: 1.2,
+            colors: [Color(0xFFF1EAF7), Colors.white],
+          ),
+        ),
+        child: SafeArea(
           child: _AjusteSinScroll(
             maxWidth: 420,
             padding: 28,
@@ -353,94 +357,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
           ),
         ),
-        ),
       ),
     );
   }
-}
-
-class _FondoLoginPainter extends CustomPainter {
-  const _FondoLoginPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final lienzo = Rect.fromLTWH(0, 0, w, h);
-    final suavizado = (w < h ? w : h) * 0.045;
-
-    canvas.clipRect(lienzo);
-
-    canvas.drawRect(
-      lienzo,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFFCF9FD), Color(0xFFF9F5FC)],
-        ).createShader(lienzo),
-    );
-
-    void onda(Path ruta, List<Color> colores, double desenfoque) {
-      canvas.drawPath(
-        ruta,
-        Paint()
-          ..shader = LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: colores,
-          ).createShader(lienzo)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, desenfoque),
-      );
-    }
-
-    onda(
-      Path()
-        ..moveTo(-w * 0.1, -h * 0.05)
-        ..lineTo(w * 1.1, -h * 0.05)
-        ..lineTo(w * 1.1, h * 0.03)
-        ..cubicTo(w * 0.80, h * 0.07, w * 0.45, h * 0.11, w * 0.10, h * 0.23)
-        ..lineTo(-w * 0.1, h * 0.31)
-        ..close(),
-      const [Color(0x2EB79AD9), Color(0x0AB79AD9)],
-      suavizado,
-    );
-
-    onda(
-      Path()
-        ..moveTo(-w * 0.1, -h * 0.05)
-        ..lineTo(w * 0.55, -h * 0.05)
-        ..cubicTo(w * 0.40, h * 0.04, w * 0.20, h * 0.10, -w * 0.1, h * 0.19)
-        ..close(),
-      const [Color(0x2E9A75C4), Color(0x0A9A75C4)],
-      suavizado * 0.8,
-    );
-
-    onda(
-      Path()
-        ..moveTo(-w * 0.1, h * 0.90)
-        ..cubicTo(w * 0.25, h * 0.88, w * 0.60, h * 0.80, w * 1.1, h * 0.75)
-        ..lineTo(w * 1.1, h * 1.05)
-        ..lineTo(-w * 0.1, h * 1.05)
-        ..close(),
-      const [Color(0x0AB79AD9), Color(0x2EA07CC8)],
-      suavizado,
-    );
-
-    onda(
-      Path()
-        ..moveTo(-w * 0.1, h * 0.99)
-        ..cubicTo(w * 0.30, h * 0.97, w * 0.65, h * 0.91, w * 1.1, h * 0.86)
-        ..lineTo(w * 1.1, h * 1.05)
-        ..lineTo(-w * 0.1, h * 1.05)
-        ..close(),
-      const [Color(0x148E63B8), Color(0x338E63B8)],
-      suavizado * 0.8,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _AjusteSinScroll extends StatefulWidget {
