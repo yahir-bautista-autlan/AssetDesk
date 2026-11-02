@@ -2084,28 +2084,6 @@ class _RecuperarScreenState extends State<_RecuperarScreen> {
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
-                                  Center(
-                                    child: ExcludeFocus(
-                                      child: TextButton.icon(
-                                        onPressed: _isLoading
-                                            ? null
-                                            : () => Navigator.pop(context),
-                                        icon: const Icon(
-                                            Icons.arrow_back_rounded,
-                                            size: 18,
-                                            color: primaryPurple),
-                                        label: const Text(
-                                          'Volver a iniciar sesión',
-                                          style: TextStyle(
-                                            color: primaryPurple,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                                 ],
                               ),
                             ),
