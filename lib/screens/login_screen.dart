@@ -428,6 +428,54 @@ class _AjusteSinScrollState extends State<_AjusteSinScroll> {
   }
 }
 
+/// Indicador de pasos compartido (activación de cuenta y recuperación).
+class _BarraPasos extends StatelessWidget {
+  static const _morado = Color(0xFF4A2574);
+
+  final int paso;
+  final String nombre;
+  final int total;
+
+  const _BarraPasos({
+    required this.paso,
+    required this.nombre,
+    this.total = 2,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget segmento(int n) {
+      return Expanded(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          height: 4,
+          margin: EdgeInsets.only(right: n < total ? 8 : 0),
+          decoration: BoxDecoration(
+            color: n <= paso ? _morado : const Color(0xFFD9CCEA),
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Row(children: [for (var n = 1; n <= total; n++) segmento(n)]),
+        const SizedBox(height: 12),
+        Text(
+          'PASO $paso DE $total  ·  $nombre',
+          style: const TextStyle(
+            fontSize: 12,
+            letterSpacing: 0.6,
+            color: Color(0xFF8B83A3),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _InvitacionScreen extends StatefulWidget {
   final String correoInicial;
 
@@ -671,37 +719,7 @@ class _InvitacionScreenState extends State<_InvitacionScreen> {
     );
   }
 
-  Widget _barraProgreso() {
-    Widget segmento(int n) {
-      return Expanded(
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          height: 4,
-          margin: EdgeInsets.only(right: n < 2 ? 8 : 0),
-          decoration: BoxDecoration(
-            color: n <= _paso ? primaryPurple : const Color(0xFFD9CCEA),
-            borderRadius: BorderRadius.circular(4),
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        Row(children: [segmento(1), segmento(2)]),
-        const SizedBox(height: 12),
-        Text(
-          'PASO $_paso DE 2  ·  $_nombrePaso',
-          style: const TextStyle(
-            fontSize: 12,
-            letterSpacing: 0.6,
-            color: Color(0xFF8B83A3),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
+  Widget _barraProgreso() => _BarraPasos(paso: _paso, nombre: _nombrePaso);
 
   Widget _indicadorFuerza() {
     final p = _passCtrl.text;
@@ -1193,6 +1211,8 @@ class _RecuperarScreenState extends State<_RecuperarScreen> {
     super.dispose();
   }
 
+  String get _nombrePaso => _paso == 1 ? 'CORREO' : 'VERIFICACIÓN';
+
   String get _subtituloPaso => _paso == 1
       ? 'Te enviaremos un código para que crees una nueva contraseña.'
       : 'Ingresa el código que recibiste y elige tu nueva contraseña.';
@@ -1355,76 +1375,6 @@ class _RecuperarScreenState extends State<_RecuperarScreen> {
           color: _titulo,
         ),
       ),
-    );
-  }
-
-  Widget _indicadorPaso(int n, String etiqueta) {
-    final hecho = _paso > n;
-    final activo = _paso == n;
-    final marcado = hecho || activo;
-    return SizedBox(
-      width: 92,
-      child: Column(
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: marcado ? primaryPurple : Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: marcado ? primaryPurple : const Color(0xFFD9CCEA),
-                width: 1.5,
-              ),
-            ),
-            child: hecho
-                ? const Icon(Icons.check, size: 18, color: Colors.white)
-                : Text(
-                    '$n',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: activo ? Colors.white : _tenue,
-                    ),
-                  ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            etiqueta,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: activo ? FontWeight.w700 : FontWeight.w500,
-              color: activo ? primaryPurple : _tenue,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _pasos() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _indicadorPaso(1, 'Correo'),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 15),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              height: 2,
-              decoration: BoxDecoration(
-                color: _paso > 1 ? primaryPurple : const Color(0xFFD9CCEA),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-        ),
-        _indicadorPaso(2, 'Verificación'),
-      ],
     );
   }
 
@@ -1970,8 +1920,9 @@ class _RecuperarScreenState extends State<_RecuperarScreen> {
                                   const SizedBox(height: 22),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 24),
-                                    child: _pasos(),
+                                        horizontal: 28),
+                                    child: _BarraPasos(
+                                        paso: _paso, nombre: _nombrePaso),
                                   ),
                                   const SizedBox(height: 22),
                                   Container(
