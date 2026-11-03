@@ -728,10 +728,6 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
                               color: Color(0xFF111827)),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.refresh, color: primaryPurple),
-                        onPressed: _cargando ? null : _cargar,
-                      ),
                       PopupMenuButton<String>(
                         offset: const Offset(0, 48),
                         elevation: 8,

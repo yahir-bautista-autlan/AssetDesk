@@ -21,13 +21,11 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
 
   bool _isProcessing = false;
   bool _isTorchOn = false;
-  final TextEditingController _manualController = TextEditingController();
 
   @override
   void dispose() {
     _apagarCamaraWeb();
     controller.dispose();
-    _manualController.dispose();
     super.dispose();
   }
 
@@ -72,12 +70,6 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     }
   }
 
-  void _buscarManual() {
-    final texto = _manualController.text.trim();
-    if (texto.isEmpty || _isProcessing) return;
-    _cerrar(texto);
-  }
-
   Widget _errorCamara(BuildContext context, MobileScannerException error) {
     return Container(
       color: const Color(0xFF1E1B2E),
@@ -99,7 +91,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           SizedBox(height: 6),
           Text(
             kIsWeb
-                ? 'Permite el acceso a la cámara en tu navegador o ingresa el Número de Serie manualmente.'
+                ? 'Permite el acceso a la cámara en tu navegador.'
                 : 'Revisa los permisos de la cámara en tu dispositivo.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white70, fontSize: 13),
@@ -149,62 +141,42 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
     );
   }
 
-  Widget _entradaManual() {
+  Widget _botonLinterna() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '¿No funciona la cámara? Ingresa el Número de Serie (SN):',
-                style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                controller.toggleTorch();
+                setState(() {
+                  _isTorchOn = !_isTorchOn;
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryPurple,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _manualController,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _buscarManual(),
-                      decoration: InputDecoration(
-                        hintText: 'Ej. 9RGHKN3',
-                        filled: true,
-                        fillColor: const Color(0xFFF9FAFB),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              const BorderSide(color: primaryPurple, width: 1.6),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryPurple,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 22, vertical: 16),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: _buscarManual,
-                    child: const Text('Buscar',
-                        style: TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                ],
+              icon: Icon(
+                _isTorchOn ? Icons.flash_on : Icons.flash_off,
+                color: Colors.white,
               ),
-            ],
+              label: const Text(
+                'Linterna',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -273,45 +245,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
                     )
                   : _visorCamara(),
             ),
-            if (kIsWeb)
-              _entradaManual()
-            else ...[
-              const SizedBox(height: 24),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      controller.toggleTorch();
-                      setState(() {
-                        _isTorchOn = !_isTorchOn;
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryPurple,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    icon: Icon(
-                      _isTorchOn ? Icons.flash_on : Icons.flash_off,
-                      color: Colors.white,
-                    ),
-                    label: const Text(
-                      'Linterna',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            _botonLinterna(),
           ],
         ),
       ),

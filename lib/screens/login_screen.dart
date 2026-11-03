@@ -431,15 +431,14 @@ class _AjusteSinScrollState extends State<_AjusteSinScroll> {
 /// Indicador de pasos compartido (activación de cuenta y recuperación).
 class _BarraPasos extends StatelessWidget {
   static const _morado = Color(0xFF4A2574);
+  static const _total = 2;
 
   final int paso;
   final String nombre;
-  final int total;
 
   const _BarraPasos({
     required this.paso,
     required this.nombre,
-    this.total = 2,
   });
 
   @override
@@ -449,7 +448,7 @@ class _BarraPasos extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 250),
           height: 4,
-          margin: EdgeInsets.only(right: n < total ? 8 : 0),
+          margin: EdgeInsets.only(right: n < _total ? 8 : 0),
           decoration: BoxDecoration(
             color: n <= paso ? _morado : const Color(0xFFD9CCEA),
             borderRadius: BorderRadius.circular(4),
@@ -460,10 +459,10 @@ class _BarraPasos extends StatelessWidget {
 
     return Column(
       children: [
-        Row(children: [for (var n = 1; n <= total; n++) segmento(n)]),
+        Row(children: [for (var n = 1; n <= _total; n++) segmento(n)]),
         const SizedBox(height: 12),
         Text(
-          'PASO $paso DE $total  ·  $nombre',
+          'PASO $paso DE $_total  ·  $nombre',
           style: const TextStyle(
             fontSize: 12,
             letterSpacing: 0.6,
