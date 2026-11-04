@@ -1967,9 +1967,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
               ),
             ),
             child: Text(
-              titulo == 'Disponibles' && _tabs[_tabIndex.value] == 'Consumibles'
-                  ? 'Stock'
-                  : titulo,
+              titulo,
               style: TextStyle(
                 color: activo ? primaryPurple : const Color(0xFF4B5563),
                 fontWeight: activo ? FontWeight.bold : FontWeight.w500,
