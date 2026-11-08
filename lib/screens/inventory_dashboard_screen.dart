@@ -39,10 +39,12 @@ String _etiquetaColumna(String h) =>
 class _AvisoAprobacion extends StatelessWidget {
   final String responsable;
   final EdgeInsetsGeometry margen;
+  final String? texto;
 
   const _AvisoAprobacion({
     required this.responsable,
     this.margen = const EdgeInsets.only(top: 16),
+    this.texto,
   });
 
   @override
@@ -64,7 +66,9 @@ class _AvisoAprobacion extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              responsable.isEmpty
+              texto != null
+                  ? texto!
+                  : responsable.isEmpty
                   ? 'Este cambio no se aplicará de inmediato: se enviará al responsable del inventario para su aprobación.'
                   : 'Este cambio no se aplicará de inmediato: se enviará a $responsable para su aprobación.',
               style: const TextStyle(
@@ -298,7 +302,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
       if (previo.isEmpty) return;
 
       if (r['reset'] == true) {
-        _cargarDatosRemotos(silencioso: true);
+        _refrescoCompleto();
         _recontarPendientes();
         return;
       }
@@ -314,6 +318,22 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
       }
     } finally {
       _sondeando = false;
+    }
+  }
+
+  Future<void> _refrescoCompleto() async {
+    final ss = _inventarioActivo?.spreadsheetId ?? '';
+    if (ss.isEmpty) return;
+    for (final t in _tabs) {
+      AuthService.olvidarDatos(ss, pestana: t);
+      AuthService.olvidarDatos(ss, pestana: t, bajas: true);
+    }
+    await _cargarDatosRemotos(silencioso: true);
+    if (!mounted) return;
+    for (final t in _tabs) {
+      if (_datosHojas.containsKey(_dataKeyFor(t, 'Bajas'))) {
+        await _asegurarBajasCargadas(t, refrescar: true);
+      }
     }
   }
 
@@ -413,9 +433,16 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
       case 'quitar':
         _quitarFila(p, p, sn);
         break;
+      case 'quitarBaja':
+        _quitarFila(claveBajas, p, sn);
+        break;
       case 'recargar':
         if (_datosHojas.containsKey(p)) _refrescarPestana(p);
         break;
+      case 'recargarTodo':
+        _refrescoCompleto();
+        _recontarPendientes();
+        return;
       case 'solicitudes':
         _recontarPendientes();
         return;
@@ -609,7 +636,7 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
       MaterialPageRoute(builder: (_) => const SolicitudesPendientesScreen()),
     );
     if (!mounted) return;
-    if (cambios == true) _cargarDatosRemotos(silencioso: true, forzar: true);
+    if (cambios == true) _refrescoCompleto();
     _cargarPendientes();
   }
 
@@ -692,14 +719,16 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     if (_puedeAprobar) _cargarPendientes();
 
     if (!aplicado) {
-      await _cargarDatosRemotos(silencioso: true, forzar: true);
+      await _refrescarPestana(pestana);
       if (!mounted) return;
 
       final claveBajas = _dataKeyFor(pestana, 'Bajas');
       if (_datosHojas.containsKey(claveBajas) ||
           (_filtroEstado.value == 'Bajas' &&
               _tabs[_tabIndex.value] == pestana)) {
-        await _asegurarBajasCargadas(pestana, forzar: true);
+        AuthService.olvidarDatos(_inventarioActivo?.spreadsheetId ?? '',
+            pestana: pestana, bajas: true);
+        await _asegurarBajasCargadas(pestana, refrescar: true);
       }
     }
   }
@@ -869,6 +898,61 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
     _columnasPorPestana.value = {..._columnasPorPestana.value, key: columnas};
   }
 
+  static const Map<String, List<String>> _clavesOrden = {
+    'Captura': ['nombre', 'nombre logico del equipo'],
+    'Impresoras': ['nombre'],
+    'Otros': ['nombre'],
+    'Consumibles': ['impresora', 'modelo'],
+  };
+
+  static String _sinAcentos(String t) => t
+      .toLowerCase()
+      .replaceAll('á', 'a')
+      .replaceAll('é', 'e')
+      .replaceAll('í', 'i')
+      .replaceAll('ó', 'o')
+      .replaceAll('ú', 'u')
+      .replaceAll('ü', 'u')
+      .trim();
+
+  void _ordenarPorNombre(
+      List<dynamic> filas, String pestana, List<String> headers) {
+    if (filas.length < 2) return;
+    final candidatas = _clavesOrden[pestana];
+    if (candidatas == null) return;
+
+    final claves = <String>[];
+    for (final c in candidatas) {
+      for (final h in headers) {
+        if (_sinAcentos(h) == c) {
+          claves.add(h);
+          break;
+        }
+      }
+    }
+    if (claves.isEmpty) return;
+
+    String valorDe(dynamic r, String k) =>
+        r is Map ? _sinAcentos((r[k] ?? '').toString()) : '';
+
+    final indexadas = <MapEntry<int, dynamic>>[
+      for (var i = 0; i < filas.length; i++) MapEntry(i, filas[i]),
+    ];
+    indexadas.sort((a, b) {
+      for (var n = 0; n < claves.length; n++) {
+        final va = valorDe(a.value, claves[n]);
+        final vb = valorDe(b.value, claves[n]);
+        if (n == 0 && va.isEmpty != vb.isEmpty) return va.isEmpty ? 1 : -1;
+        final c = va.compareTo(vb);
+        if (c != 0) return c;
+      }
+      return a.key.compareTo(b.key);
+    });
+    for (var i = 0; i < filas.length; i++) {
+      filas[i] = indexadas[i].value;
+    }
+  }
+
   (List<String>, List<dynamic>) _obtenerDatosVisibles() {
     final index = _tabIndex.value;
     final nombrePestana = _tabs[index];
@@ -937,6 +1021,8 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
 
       filteredRows.add(row);
     }
+
+    _ordenarPorNombre(filteredRows, nombrePestana, allHeaders);
 
     final resultado = (headers, filteredRows);
     if (_memos.length >= 8) _memos.remove(_memos.keys.first);
@@ -1967,7 +2053,9 @@ class _InventoryDashboardScreenState extends State<InventoryDashboardScreen>
               ),
             ),
             child: Text(
-              titulo,
+              titulo == 'Disponibles' && _tabs[_tabIndex.value] == 'Consumibles'
+                  ? 'Stock'
+                  : titulo,
               style: TextStyle(
                 color: activo ? primaryPurple : const Color(0xFF4B5563),
                 fontWeight: activo ? FontWeight.bold : FontWeight.w500,
@@ -2580,6 +2668,14 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
   late final List<_DetailSection> _secciones = _seccionesConDatos();
 
   bool get _requiereAprobacion => _requiereAprobacionEn(widget.inventario);
+
+  late final bool _bajaPorTransferencia = widget.esBaja &&
+      widget.fila.entries.any((e) {
+        final k = _normalizarClave(e.key);
+        if (!k.contains('comentario') && !k.contains('motivo')) return false;
+        return (e.value ?? '').toString().contains('[Transferencia ');
+      });
+
   String get _responsableTexto => widget.inventario?.responsableEmail ?? '';
 
   static final RegExp _espacios = RegExp(r'\s+');
@@ -3124,7 +3220,9 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                _requiereAprobacion
+                                _bajaPorTransferencia
+                                    ? 'Este elemento fue transferido a otra planta, por eso aparece en las bajas de este inventario. Ya no le pertenece y no se puede revertir la baja.'
+                                    : _requiereAprobacion
                                     ? 'Este elemento está dado de baja. Solo el responsable del inventario puede revertir la baja.'
                                     : 'Este elemento está dado de baja. Puedes revertir la baja para regresarlo al inventario.',
                                 style: const TextStyle(
@@ -3372,14 +3470,51 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
           ),
         ),
         const SizedBox(height: 2),
-        Text(
-          _valor(campo.key),
-          style: const TextStyle(
-            fontSize: 14,
-            color: Colors.black87,
-            fontWeight: FontWeight.w500,
+        _textoCampo(_valor(campo.key)),
+      ],
+    );
+  }
+
+  Widget _textoCampo(String valor) {
+    const estilo = TextStyle(
+      fontSize: 14,
+      color: Colors.black87,
+      fontWeight: FontWeight.w500,
+    );
+    if (!valor.contains(' | ') && !valor.contains('[Transferencia ')) {
+      return Text(valor, style: estilo);
+    }
+    final entradas = valor
+        .split(' | ')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final patron = RegExp(r'^\[(Transferencia [^\]]+)\]\s*(.*)$');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < entradas.length; i++)
+          Padding(
+            padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
+            child: Builder(builder: (_) {
+              final m = patron.firstMatch(entradas[i]);
+              if (m == null) return Text(entradas[i], style: estilo);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    m.group(1)!,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF0F766E),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(m.group(2)!, style: estilo),
+                ],
+              );
+            }),
           ),
-        ),
       ],
     );
   }
@@ -3418,7 +3553,7 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
 
     if (widget.esBaja) {
       if (!esConsumible) acciones.add(_botonQr());
-      if (widget.puedeEditar && !_requiereAprobacion) {
+      if (widget.puedeEditar && !_requiereAprobacion && !_bajaPorTransferencia) {
         acciones.add(
           ElevatedButton.icon(
             onPressed: _revirtiendo ? null : _revertirBaja,
@@ -3511,6 +3646,23 @@ class _DeviceDetailSheetState extends State<_DeviceDetailSheet> {
   }
 
   Widget _buildBottomActions(List<Widget> acciones) {
+    if (acciones.length == 1) {
+      return Container(
+        padding: EdgeInsets.fromLTRB(
+            16, 12, 16, 14 + MediaQuery.viewPaddingOf(context).bottom),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Color(0xFFF0F0F3))),
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: SizedBox(width: double.infinity, child: acciones.first),
+          ),
+        ),
+      );
+    }
+
     final hijos = <Widget>[];
     for (var i = 0; i < acciones.length; i++) {
       if (i > 0) hijos.add(const SizedBox(width: 10));
@@ -4149,6 +4301,17 @@ class _TransferirDialogState extends State<_TransferirDialog> {
                     ),
                   ),
                 ),
+                if (_destino != null &&
+                    _destino!.responsableEmail.isNotEmpty &&
+                    !_destino!.esResponsable(
+                        AuthService.usuarioCache?.correo ?? '')) ...[
+                  _AvisoAprobacion(
+                    responsable: '',
+                    margen: const EdgeInsets.only(top: 12),
+                    texto:
+                        'El responsable de ${_destino!.nombre} deberá aceptar la transferencia. El equipo seguirá en este inventario hasta que la acepte.',
+                  ),
+                ],
                 const SizedBox(height: 14),
                 TextField(
                   controller: _motivoCtrl,
@@ -4304,8 +4467,10 @@ class _ExportarDialogState extends State<_ExportarDialog> {
               'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           name: 'Reporte_${widget.nombrePestana}.xlsx',
         );
-        await Share.shareXFiles([xfile],
-            text: 'Reporte: ${widget.nombrePestana}');
+        await SharePlus.instance.share(ShareParams(
+          files: [xfile],
+          text: 'Reporte: ${widget.nombrePestana}',
+        ));
       }
 
       if (mounted) {

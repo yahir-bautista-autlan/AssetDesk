@@ -36,7 +36,6 @@ class _InventorySelectionScreenState extends State<InventorySelectionScreen> {
   void initState() {
     super.initState();
     _inventarios = List<InventoryModel>.from(widget.inventariosVinculados);
-    AuthService.precargarImagenes(_inventarios);
     AuthService.solicitudesPendientes.addListener(_alCambiarPendientes);
     _cargarUsuario();
     _refrescarInventarios();
@@ -763,6 +762,8 @@ class _SolicitudesPendientesScreenState
         return const Color(0xFFDC2626);
       case 'transferir':
         return const Color(0xFF7C3AED);
+      case 'recibir_transferencia':
+        return const Color(0xFF0F766E);
       default:
         return primaryPurple;
     }
@@ -778,13 +779,23 @@ class _SolicitudesPendientesScreenState
         return Icons.remove_circle_outline;
       case 'transferir':
         return Icons.swap_horiz_rounded;
+      case 'recibir_transferencia':
+        return Icons.move_to_inbox_outlined;
       default:
         return Icons.help_outline;
     }
   }
 
+  String _etiquetaAccion(SolicitudModel s) =>
+      s.actionType == 'recibir_transferencia'
+          ? 'Transferencia entrante'
+          : s.accionLabel;
+
   String _textoConfirmacion(SolicitudModel s) {
     switch (s.actionType) {
+      case 'recibir_transferencia':
+        // En esta solicitud, destinoNombre guarda el inventario de origen.
+        return 'El elemento saldrá de ${s.destinoNombre.isEmpty ? 'el inventario de origen' : s.destinoNombre} y pasará a ${s.inventoryName} (pestaña ${s.pestana}), según lo solicitado por ${s.requestedByName}.';
       case 'editar':
         return 'Se aplicarán ${s.cambios.length} cambio(s) solicitados por ${s.requestedByName} directamente en el inventario.';
       case 'transferir':
@@ -1321,6 +1332,62 @@ class _SolicitudesPendientesScreenState
               ),
           ];
         }
+      case 'recibir_transferencia':
+        {
+          final motivo = s.motivoTransferencia;
+          return [
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE6F4F1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFB7DED8)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('SE ENVÍA DESDE',
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0F766E),
+                          letterSpacing: 0.5)),
+                  const SizedBox(height: 4),
+                  Text(
+                    // En esta solicitud, destinoNombre guarda el inventario de origen.
+                    s.destinoNombre.isEmpty ? 'Otro inventario' : s.destinoNombre,
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF134E4A)),
+                  ),
+                  if (motivo.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text('Motivo: $motivo',
+                        style: const TextStyle(
+                            fontSize: 12, color: Color(0xFF4B5563))),
+                  ],
+                  const SizedBox(height: 6),
+                  const Text(
+                    'El equipo sigue en el inventario de origen hasta que aceptes.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF4B5563)),
+                  ),
+                ],
+              ),
+            ),
+            if (!s.referenciaEncontrada)
+              _avisoSinReferencia()
+            else
+              _desplegable(
+                'Datos del elemento (${s.camposDelElemento.length})',
+                s.camposDelElemento
+                    .map((e) => _filaDato(e.key, e.value))
+                    .toList(),
+              ),
+          ];
+        }
       default:
         return const [];
     }
@@ -1377,7 +1444,7 @@ class _SolicitudesPendientesScreenState
                       Icon(_iconoAccion(s.actionType), size: 14, color: color),
                       const SizedBox(width: 5),
                       Text(
-                        s.accionLabel,
+                        _etiquetaAccion(s),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
