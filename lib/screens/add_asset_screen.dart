@@ -1,3 +1,7 @@
+import 'dart:ui' show FlutterView;
+
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, ValueNotifier, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/inventory_model.dart';
@@ -138,7 +142,8 @@ class AddAssetScreen extends StatefulWidget {
   State<AddAssetScreen> createState() => _AddAssetScreenState();
 }
 
-class _AddAssetScreenState extends State<AddAssetScreen> {
+class _AddAssetScreenState extends State<AddAssetScreen>
+    with WidgetsBindingObserver {
   static const primaryPurple = Color(0xFF532E7C);
 
   static const Set<String> _estaticosBase = {
@@ -253,9 +258,84 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   late List<_SeccionCampos> _secciones;
   final Set<int> _expandidas = {0};
 
+  // --- Ajustes para iOS / PWA -------------------------------------------
+  // Columnas del formulario. Se calcula UNA vez y solo se vuelve a calcular
+  // cuando cambia el ANCHO de la ventana. Antes se usaba un LayoutBuilder
+  // alrededor de todo el formulario: en iOS el teclado cambia el alto en
+  // cada frame de su animacion y eso reconstruia los ~35 campos una y otra
+  // vez (de ahi el "se traba").
+  int _columnas = 1;
+  late FlutterView _vista;
+
+  // true mientras hay un campo de texto con foco (= teclado abierto).
+  final ValueNotifier<bool> _editando = ValueNotifier<bool>(false);
+
+  String? _ultimoHeaderTexto;
+
+  bool get _esIos => defaultTargetPlatform == TargetPlatform.iOS;
+
+  bool get _esMovil =>
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.android;
+
+  // iOS hace zoom automatico al enfocar un input con letra < 16px.
+  double get _tamanoInput => _esIos ? 16.0 : 14.0;
+
+  TextInputAction _accionTeclado(String header) {
+    if (!_esMovil) return TextInputAction.done;
+    return header == _ultimoHeaderTexto
+        ? TextInputAction.done
+        : TextInputAction.next;
+  }
+
+  int _calcularColumnas() {
+    final ancho = _vista.physicalSize.width / _vista.devicePixelRatio;
+    final contenido = ancho > 1000 ? 1000.0 : ancho;
+    return contenido >= 640 ? 2 : 1;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _vista = View.of(context);
+    _columnas = _calcularColumnas();
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    final c = _calcularColumnas();
+    if (c != _columnas) setState(() => _columnas = c);
+  }
+
+  void _alCambiarFoco() {
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    final editando = ctx != null &&
+        (ctx.widget is EditableText ||
+            ctx.findAncestorWidgetOfExactType<EditableText>() != null);
+    if (_editando.value != editando) _editando.value = editando;
+  }
+
+  String? _calcularUltimoHeaderTexto() {
+    String? ultimo;
+    for (final seccion in _secciones) {
+      for (final h in seccion.headers) {
+        if (_camposEstaticos.contains(h) ||
+            _camposSelect.contains(h) ||
+            _esCampoFecha(h)) {
+          continue;
+        }
+        ultimo = h;
+      }
+    }
+    return ultimo;
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    FocusManager.instance.addListener(_alCambiarFoco);
     _ubicacionAuto = widget.inventario?.ubicacion ?? '';
 
     final snKey = _mapaSnKeyGlobal[widget.nombrePestana];
@@ -265,11 +345,15 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
     _prepararCampos();
     _secciones = _agruparPorSeccion();
+    _ultimoHeaderTexto = _calcularUltimoHeaderTexto();
     _cargarResponsable();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    FocusManager.instance.removeListener(_alCambiarFoco);
+    _editando.dispose();
     for (final c in _controllers.values) {
       c.dispose();
     }
@@ -824,34 +908,54 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             ),
             const Divider(height: 1, color: Color(0xFFF0F0F3)),
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final contentWidth =
-                      constraints.maxWidth > 1000 ? 1000.0 : constraints.maxWidth;
-                  final columnas = contentWidth >= 640 ? 2 : 1;
-
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: contentWidth),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (_requiereAprobacion) _bannerAprobacion(),
-                            ..._buildSecciones(columnas),
-                          ],
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1000),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_requiereAprobacion) _bannerAprobacion(),
+                        ..._buildSecciones(_columnas),
+                        // Con el teclado abierto el boton va AL FINAL del
+                        // formulario (dentro del scroll), asi nunca queda
+                        // aplastado ni tapado.
+                        _segunTeclado(
+                          abierto: () => _buildBotonGuardar(enLinea: true),
+                          cerrado: () => const SizedBox.shrink(),
                         ),
-                      ),
+                      ],
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
             ),
-            _buildBotonGuardar(),
+            // Con el teclado cerrado, el boton queda fijo abajo.
+            _segunTeclado(
+              abierto: () => const SizedBox.shrink(),
+              cerrado: () => _buildBotonGuardar(),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  /// Reconstruye SOLO este trozo cuando el teclado se abre o se cierra.
+  Widget _segunTeclado({
+    required Widget Function() abierto,
+    required Widget Function() cerrado,
+  }) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _editando,
+      builder: (context, editando, _) {
+        final tecladoVisible =
+            editando || MediaQuery.viewInsetsOf(context).bottom > 0;
+        return tecladoVisible ? abierto() : cerrado();
+      },
     );
   }
 
@@ -1014,13 +1118,18 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
         _label(header),
         TextFormField(
           controller: _controllers[header],
-          autofocus: esPrimero,
-          textInputAction: TextInputAction.done,
-          onFieldSubmitted: (_) => _intentarGuardar(),
+          // En iOS/Android abrir el teclado solo al entrar hace que la
+          // pantalla se redimensione mientras anima la transicion.
+          autofocus: esPrimero && !_esMovil,
+          textInputAction: _accionTeclado(header),
+          onFieldSubmitted: (_) {
+            if (!_esMovil) _intentarGuardar();
+          },
+          scrollPadding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
           keyboardType: _esCampoNumerico(header)
               ? TextInputType.number
               : TextInputType.text,
-          style: const TextStyle(fontSize: 14, color: Colors.black87),
+          style: TextStyle(fontSize: _tamanoInput, color: Colors.black87),
           decoration: _decoracionBase(
             hint: header.toLowerCase().contains('serie')
                 ? 'Dejar en blanco para generar auto'
@@ -1040,7 +1149,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
           controller: _controllers[header],
           readOnly: true,
           onTap: () => _elegirFecha(header),
-          style: const TextStyle(fontSize: 14, color: Colors.black87),
+          style: TextStyle(fontSize: _tamanoInput, color: Colors.black87),
           decoration: _decoracionBase(
             hint: 'dd/mm/aaaa',
             suffixIcon: const Icon(Icons.calendar_today_outlined,
@@ -1088,7 +1197,11 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
           decoracion: _decoracionBase,
           hintNuevo: _frase(header, nuevo: true),
           hintVacio: _frase(header, nuevo: false),
-          onEnviar: _intentarGuardar,
+          accion: _esMovil ? TextInputAction.next : TextInputAction.done,
+          tamanoTexto: _tamanoInput,
+          onEnviar: () {
+            if (!_esMovil) _intentarGuardar();
+          },
           onEditado: () {
             if (_erroresSelect.containsKey(header)) {
               setState(() => _erroresSelect.remove(header));
@@ -1099,13 +1212,17 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     );
   }
 
-  Widget _buildBotonGuardar() {
+  Widget _buildBotonGuardar({bool enLinea = false}) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFF0F0F3))),
-      ),
+      padding: enLinea
+          ? const EdgeInsets.only(top: 4, bottom: 8)
+          : const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      decoration: enLinea
+          ? null
+          : const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFF0F0F3))),
+            ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1000),
@@ -1185,6 +1302,8 @@ class _CampoSelect extends StatefulWidget {
   final VoidCallback onEnviar;
   final String hintNuevo;
   final String hintVacio;
+  final TextInputAction accion;
+  final double tamanoTexto;
 
   const _CampoSelect({
     super.key,
@@ -1196,6 +1315,8 @@ class _CampoSelect extends StatefulWidget {
     required this.onEnviar,
     required this.hintNuevo,
     required this.hintVacio,
+    required this.accion,
+    required this.tamanoTexto,
   });
 
   @override
@@ -1311,8 +1432,9 @@ class _CampoSelectState extends State<_CampoSelect> {
           return TextFormField(
             controller: widget.controlador,
             focusNode: _foco,
-            style: const TextStyle(fontSize: 14, color: Colors.black87),
-            textInputAction: TextInputAction.done,
+            style: TextStyle(fontSize: widget.tamanoTexto, color: Colors.black87),
+            scrollPadding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+            textInputAction: widget.accion,
             onFieldSubmitted: (_) => widget.onEnviar(),
             onChanged: (_) => widget.onEditado(),
             decoration: widget
